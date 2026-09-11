@@ -1,0 +1,607 @@
+============================================================
+PYDB — COMPLETE CLI MANUAL TEST
+============================================================
+
+START
+-----
+
+cd /Users/addy/Desktop/PyDB
+
+python3 -m pydb.cli
+
+
+============================================================
+1. CLI BASICS
+============================================================
+
+.help
+
+.tables
+
+
+============================================================
+2. CREATE TABLE + CONSTRAINTS
+============================================================
+
+CREATE TABLE users (
+    id INT PRIMARY KEY,
+    name TEXT NOT NULL,
+    age INT,
+    city TEXT DEFAULT 'Delhi',
+    salary FLOAT,
+    active BOOL DEFAULT TRUE
+);
+
+.tables
+
+.schema users
+
+.indexes users
+
+
+============================================================
+3. INSERT — BASIC
+============================================================
+
+INSERT INTO users
+VALUES (1, 'Aditya', 22, 'Delhi', 75000.50, TRUE);
+
+INSERT INTO users
+VALUES (2, 'Rahul', 25, 'Mumbai', 85000.00, FALSE);
+
+INSERT INTO users
+VALUES (3, 'Priya', 28, 'Delhi', 92000.75, TRUE);
+
+INSERT INTO users
+VALUES (4, 'Aman', 31, 'Chandigarh', 65000.25, TRUE);
+
+INSERT INTO users
+VALUES (5, 'Neha', 35, 'Delhi', 105000.00, FALSE);
+
+SELECT * FROM users;
+
+
+============================================================
+4. COLUMN-LIST INSERT + DEFAULT
+============================================================
+
+INSERT INTO users (id, name, age, salary)
+VALUES (6, 'Karan', 24, 70000.00);
+
+SELECT * FROM users WHERE id = 6;
+
+
+============================================================
+5. NULL
+============================================================
+
+INSERT INTO users
+VALUES (7, 'Riya', NULL, NULL, 60000.00, TRUE);
+
+SELECT * FROM users WHERE id = 7;
+
+INSERT INTO users (id, name)
+VALUES (8, 'Vikas');
+
+SELECT * FROM users WHERE id = 8;
+
+
+============================================================
+6. NOT NULL — EXPECT FAILURE
+============================================================
+
+INSERT INTO users (id, age)
+VALUES (9, 30);
+
+INSERT INTO users (id, name, age)
+VALUES (9, NULL, 30);
+
+
+============================================================
+7. PRIMARY KEY — EXPECT FAILURE
+============================================================
+
+INSERT INTO users
+VALUES (1, 'Duplicate', 40, 'Delhi', 50000.00, TRUE);
+
+
+============================================================
+8. SELECT
+============================================================
+
+SELECT name FROM users;
+
+SELECT name, age, city FROM users;
+
+SELECT id AS user_id, name AS full_name
+FROM users;
+
+
+============================================================
+9. WHERE
+============================================================
+
+SELECT * FROM users
+WHERE age > 25;
+
+SELECT * FROM users
+WHERE age >= 30;
+
+SELECT * FROM users
+WHERE salary < 80000;
+
+SELECT * FROM users
+WHERE city = 'Delhi';
+
+
+============================================================
+10. AND / OR
+============================================================
+
+SELECT *
+FROM users
+WHERE age > 25 AND city = 'Delhi';
+
+SELECT *
+FROM users
+WHERE age < 25 OR salary > 90000;
+
+
+============================================================
+11. BETWEEN
+============================================================
+
+SELECT *
+FROM users
+WHERE age BETWEEN 25 AND 35;
+
+
+============================================================
+12. LIKE
+============================================================
+
+SELECT *
+FROM users
+WHERE name LIKE 'A%';
+
+SELECT *
+FROM users
+WHERE city LIKE '%i%';
+
+
+============================================================
+13. IN
+============================================================
+
+SELECT *
+FROM users
+WHERE city IN ('Delhi', 'Mumbai');
+
+
+============================================================
+14. ORDER BY
+============================================================
+
+SELECT name, age
+FROM users
+ORDER BY age ASC;
+
+SELECT name, salary
+FROM users
+ORDER BY salary DESC;
+
+
+============================================================
+15. LIMIT
+============================================================
+
+SELECT *
+FROM users
+LIMIT 3;
+
+SELECT name, salary
+FROM users
+ORDER BY salary DESC
+LIMIT 3;
+
+
+============================================================
+16. UPDATE
+============================================================
+
+UPDATE users
+SET age = 23
+WHERE id = 1;
+
+SELECT * FROM users WHERE id = 1;
+
+UPDATE users
+SET city = 'Pune', salary = 80000
+WHERE id = 1;
+
+SELECT * FROM users WHERE id = 1;
+
+UPDATE users
+SET age = NULL
+WHERE id = 1;
+
+SELECT * FROM users WHERE id = 1;
+
+
+============================================================
+17. UPDATE NOT NULL — EXPECT FAILURE
+============================================================
+
+UPDATE users
+SET name = NULL
+WHERE id = 1;
+
+
+============================================================
+18. DELETE
+============================================================
+
+DELETE FROM users
+WHERE id = 8;
+
+SELECT * FROM users
+WHERE id = 8;
+
+DELETE FROM users
+WHERE age > 100;
+
+
+============================================================
+19. AGGREGATES
+============================================================
+
+SELECT COUNT(*) FROM users;
+
+SELECT COUNT(age) FROM users;
+
+SELECT SUM(salary) FROM users;
+
+SELECT AVG(age) FROM users;
+
+SELECT MIN(age) FROM users;
+
+SELECT MAX(salary) FROM users;
+
+
+============================================================
+20. MULTIPLE AGGREGATES
+============================================================
+
+SELECT
+    COUNT(*) AS total_users,
+    AVG(age) AS average_age,
+    MAX(salary) AS highest_salary
+FROM users;
+
+
+============================================================
+21. GROUP BY
+============================================================
+
+SELECT city, COUNT(*)
+FROM users
+GROUP BY city;
+
+SELECT city, AVG(salary)
+FROM users
+GROUP BY city;
+
+
+============================================================
+22. HAVING
+============================================================
+
+SELECT city, COUNT(*) AS total
+FROM users
+GROUP BY city
+HAVING COUNT(*) > 1;
+
+
+============================================================
+23. AGGREGATE + WHERE
+============================================================
+
+SELECT AVG(salary)
+FROM users
+WHERE city = 'Delhi';
+
+
+============================================================
+24. ALIASES
+============================================================
+
+SELECT
+    name AS employee_name,
+    salary AS monthly_salary
+FROM users;
+
+SELECT COUNT(*) AS total_users
+FROM users;
+
+SELECT name, salary AS income
+FROM users
+ORDER BY income DESC;
+
+
+============================================================
+25. CREATE HASH INDEX
+============================================================
+
+CREATE INDEX age_hash_idx
+ON users(age);
+
+.indexes users
+
+.explain SELECT * FROM users WHERE age = 25;
+
+.stats SELECT * FROM users WHERE age = 25;
+
+
+============================================================
+26. CREATE BTREE INDEX
+============================================================
+
+CREATE INDEX salary_btree_idx
+ON users(salary)
+USING BTREE;
+
+.indexes users
+
+.explain SELECT * FROM users
+WHERE salary > 70000;
+
+.stats SELECT * FROM users
+WHERE salary > 70000;
+
+
+============================================================
+27. INDEX + INSERT
+============================================================
+
+INSERT INTO users
+VALUES (10, 'TestUser', 40, 'Delhi', 90000, TRUE);
+
+SELECT *
+FROM users
+WHERE age = 40;
+
+
+============================================================
+28. INDEX + UPDATE
+============================================================
+
+UPDATE users
+SET age = 41
+WHERE id = 10;
+
+SELECT *
+FROM users
+WHERE age = 40;
+
+SELECT *
+FROM users
+WHERE age = 41;
+
+
+============================================================
+29. INDEX + DELETE
+============================================================
+
+DELETE FROM users
+WHERE id = 10;
+
+SELECT *
+FROM users
+WHERE age = 41;
+
+
+============================================================
+30. B+TREE RANGE QUERY
+============================================================
+
+SELECT *
+FROM users
+WHERE salary BETWEEN 70000 AND 100000;
+
+.explain SELECT *
+FROM users
+WHERE salary BETWEEN 70000 AND 100000;
+
+.stats SELECT *
+FROM users
+WHERE salary BETWEEN 70000 AND 100000;
+
+
+============================================================
+31. DROP HASH INDEX
+============================================================
+
+DROP INDEX age_hash_idx;
+
+.indexes users
+
+.explain SELECT *
+FROM users
+WHERE age = 25;
+
+
+============================================================
+32. DROP BTREE INDEX
+============================================================
+
+DROP INDEX salary_btree_idx;
+
+.indexes users
+
+
+============================================================
+33. TRANSACTION — UPDATE + ROLLBACK
+============================================================
+
+BEGIN;
+
+UPDATE users
+SET salary = 999999
+WHERE id = 1;
+
+SELECT * FROM users
+WHERE id = 1;
+
+ROLLBACK;
+
+SELECT * FROM users
+WHERE id = 1;
+
+
+============================================================
+34. TRANSACTION — INSERT + ROLLBACK
+============================================================
+
+BEGIN;
+
+INSERT INTO users
+VALUES (11, 'Temporary', 50, 'Delhi', 50000, TRUE);
+
+SELECT *
+FROM users
+WHERE id = 11;
+
+ROLLBACK;
+
+SELECT *
+FROM users
+WHERE id = 11;
+
+
+============================================================
+35. TRANSACTION — DELETE + ROLLBACK
+============================================================
+
+BEGIN;
+
+DELETE FROM users
+WHERE id = 1;
+
+SELECT *
+FROM users
+WHERE id = 1;
+
+ROLLBACK;
+
+SELECT *
+FROM users
+WHERE id = 1;
+
+
+============================================================
+36. TRANSACTION — CREATE INDEX + ROLLBACK
+============================================================
+
+BEGIN;
+
+CREATE INDEX city_idx
+ON users(city);
+
+.indexes users
+
+ROLLBACK;
+
+.indexes users
+
+
+============================================================
+37. TRANSACTION — DROP INDEX + ROLLBACK
+============================================================
+
+CREATE INDEX city_idx
+ON users(city);
+
+.indexes users
+
+BEGIN;
+
+DROP INDEX city_idx;
+
+.indexes users
+
+ROLLBACK;
+
+.indexes users
+
+
+============================================================
+38. TRANSACTION — COMMIT
+============================================================
+
+BEGIN;
+
+UPDATE users
+SET salary = 100000
+WHERE id = 1;
+
+COMMIT;
+
+SELECT *
+FROM users
+WHERE id = 1;
+
+
+============================================================
+39. PERSISTENCE
+============================================================
+
+.tables
+
+.schema users
+
+.indexes users
+
+.exit
+
+
+============================================================
+40. RESTART CLI
+============================================================
+
+cd /Users/addy/Desktop/PyDB
+
+python3 -m pydb.cli
+
+
+============================================================
+41. VERIFY PERSISTENCE
+============================================================
+
+.tables
+
+.schema users
+
+.indexes users
+
+SELECT * FROM users;
+
+
+============================================================
+42. DROP TABLE
+============================================================
+
+DROP TABLE users;
+
+.tables
+
+
+============================================================
+43. FINAL EXIT
+============================================================
+
+.exit
+
+
+============================================================
+END
+============================================================

@@ -1,0 +1,33 @@
+{
+    "tables": {
+        "users": {
+            "name": "users",
+            "columns": [
+                {
+                    "name": "id",
+                    "data_type": "INT"
+                },
+                {
+                    "name": "name",
+                    "data_type": "TEXT"
+                },
+                {
+                    "name": "age",
+                    "data_type": "INT"
+                }
+            ],
+            "rows": [
+                [
+                    1,
+                    "Aditya",
+                    22
+                ],
+                [
+                    2,
+                    "Rahul",
+                    23
+                ]
+            ]
+        }
+    }
+}

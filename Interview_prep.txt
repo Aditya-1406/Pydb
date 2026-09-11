@@ -1,0 +1,1479 @@
+PyDB — Complete Interview Preparation
+1. Give me a 60-second overview of your project
+
+PyDB is a mini relational database engine that I built from scratch in core Python to understand how a database works internally.
+
+I implemented the complete pipeline from SQL parsing to query execution and storage. The architecture is roughly:
+
+SQL → Lexer → Parser → Query Object → Executor → Table/Storage/Indexes
+
+It supports CRUD operations, constraints such as primary key, unique, not-null and default, NULL handling, WHERE conditions, ordering, limiting, aggregation, GROUP BY, HAVING, aliases, transactions, persistence, hash indexes and B+Tree indexes.
+
+I also implemented a lightweight query planner and execution statistics so I could see when an index is selected instead of a full scan.
+
+The project has an interactive CLI and an extensive automated test suite.
+
+The main goal was not to build a production database, but to understand the internal mechanics of one by implementing the pieces myself.
+
+That should be your default opening answer.
+
+2. Why did you build this?
+
+This is one of the most important questions.
+
+Answer
+
+I wanted to understand databases below the SQL level.
+
+Normally I can write:
+
+SELECT * FROM users WHERE age = 25
+
+using PostgreSQL or MySQL, but that doesn't explain what happens internally.
+
+So I decided to build a simplified database engine myself and understand:
+
+how SQL is tokenized
+how SQL is parsed
+how queries are represented internally
+how the executor performs operations
+how constraints are enforced
+how indexes map values to records
+how a B+Tree supports range queries
+how data is persisted
+how transactions can restore state
+how a query planner chooses an access path
+
+The project was mainly an exercise in understanding database internals.
+
+Important
+
+Do not say:
+
+"I built my own production database."
+
+Say:
+
+"I built a simplified database engine for learning database internals."
+
+That sounds much more credible.
+
+3. What problem does PyDB solve?
+Answer
+
+PyDB solves a learning problem rather than a production business problem.
+
+It demonstrates how a relational database can transform a high-level SQL statement into low-level operations on stored records.
+
+The project gives me a working environment where I can observe concepts like parsing, indexing, query planning, persistence and transactions instead of treating the database as a black box.
+
+4. Explain the architecture
+
+This is probably your most important technical answer.
+
+              SQL
+               │
+               ▼
+            Lexer
+               │
+               ▼
+            Parser
+               │
+               ▼
+         Query Objects
+               │
+               ▼
+        Query Executor
+               │
+       ┌───────┴────────┐
+       ▼                ▼
+     Table           Database
+       │                │
+       ├──── Index      └── Storage
+       │
+       ├──── Hash Index
+       │
+       └──── B+Tree Index
+Explain it like this
+
+I deliberately separated the system into layers.
+
+The lexer converts raw SQL text into tokens.
+
+The parser takes those tokens and builds a structured query object.
+
+The query object represents what the user wants without executing it.
+
+The executor interprets the query object and performs the operation.
+
+The table manages schema, rows, constraints, Record IDs and indexes.
+
+The storage engine handles persistence.
+
+This separation means each component has one primary responsibility and can be tested independently.
+
+5. Why did you use a lexer?
+Answer
+
+I didn't want the parser to work directly on raw strings.
+
+The lexer converts SQL into meaningful tokens such as:
+
+CREATE
+TABLE
+users
+(
+id
+INT
+PRIMARY
+KEY
+)
+
+This makes the parser much simpler because it works with structured tokens instead of repeatedly manipulating raw strings.
+
+Example
+CREATE TABLE users (id INT);
+
+becomes conceptually:
+
+KEYWORD(CREATE)
+KEYWORD(TABLE)
+IDENTIFIER(users)
+SYMBOL(()
+IDENTIFIER(id)
+KEYWORD(INT)
+SYMBOL())
+SYMBOL(;)
+6. Why not parse SQL using string splitting?
+Answer
+
+String splitting works for trivial SQL but becomes fragile very quickly.
+
+For example:
+
+SELECT * FROM users
+WHERE name = 'Aditya Garg';
+
+Spaces inside strings, parentheses, operators, keywords and optional clauses make naive string splitting unreliable.
+
+A lexer gives me a structured token stream, which makes the parser easier to reason about and extend.
+
+7. What does the parser do?
+Answer
+
+The parser validates the token sequence against the grammar I support and creates a Query Object.
+
+For example:
+
+CREATE INDEX age_idx ON users(age) USING BTREE;
+
+becomes conceptually:
+
+CreateIndexQuery(
+    index_name="age_idx",
+    table_name="users",
+    column_name="age",
+    index_type="BTREE"
+)
+
+The executor then works with that object instead of parsing SQL itself.
+
+8. Why Query Objects?
+Answer
+
+Query Objects separate what the user requested from how the database executes it.
+
+For example:
+
+SELECT ...
+
+becomes a SelectQuery.
+
+INSERT ...
+
+becomes an InsertQuery.
+
+That keeps the executor independent of SQL syntax.
+
+It also makes testing easier because I can test the parser separately from execution.
+
+9. What happens when you run SELECT?
+
+Suppose the user runs:
+
+SELECT name
+FROM users
+WHERE age > 25
+ORDER BY name
+LIMIT 3;
+Answer
+
+The SQL first goes to the lexer.
+
+The lexer generates tokens.
+
+The parser validates those tokens and creates a SelectQuery.
+
+The executor receives the query object.
+
+The executor gets the target table and evaluates the WHERE condition.
+
+If the planner identifies a usable index, candidate Record IDs can be obtained from the index.
+
+The matching rows are then evaluated and the remaining SELECT operations such as projection, ordering and limit are applied.
+
+The final result is returned to the CLI.
+
+10. Why did you create a separate Condition system?
+Answer
+
+I wanted WHERE logic to be independent from the table implementation.
+
+So conditions are represented as objects such as:
+
+Condition
+BetweenCondition
+LikeCondition
+InCondition
+AndCondition
+OrCondition
+
+This lets the table or executor ask a condition to evaluate a row without knowing the exact SQL syntax that produced that condition.
+
+For:
+
+WHERE age > 20 AND city = 'Delhi'
+
+I can conceptually have:
+
+AndCondition
+ ├── age > 20
+ └── city = Delhi
+11. How did you implement constraints?
+
+You should know these individually.
+
+PRIMARY KEY
+Answer
+
+A primary key must uniquely identify a row.
+
+I validate inserted and updated values against the existing primary-key values and reject duplicates.
+
+A primary-key column also behaves as non-null because null cannot be used as the identifying value in the way I model the constraint.
+
+UNIQUE
+
+For a unique column, I check existing values before insert or update and reject duplicates.
+
+NOT NULL
+
+A NOT NULL constraint is checked during insert and update.
+
+If the final value is None, I raise an error.
+
+DEFAULT
+
+DEFAULT is different from explicitly inserting NULL.
+
+If the column is omitted during an INSERT and it has a default, I use the default.
+
+If the user explicitly writes NULL, I preserve NULL instead.
+
+Example:
+
+CREATE TABLE users (
+    city TEXT DEFAULT 'Delhi'
+);
+
+Then:
+
+INSERT INTO users (id, name)
+VALUES (1, 'Aditya');
+
+produces:
+
+city = Delhi
+
+But:
+
+INSERT INTO users (id, name, city)
+VALUES (2, 'Rahul', NULL);
+
+produces:
+
+city = NULL
+
+That distinction is important.
+
+12. How did you implement NULL?
+Answer
+
+Internally I represent SQL NULL using Python None.
+
+I had to handle NULL explicitly throughout the system rather than treating it like an ordinary value.
+
+This affects:
+
+comparisons
+ordering
+aggregation
+insert/update
+persistence
+indexes
+
+For example, COUNT(column) ignores NULL values while COUNT(*) still counts the row.
+
+Important
+
+Don't say:
+
+NULL is just another value.
+
+It isn't treated that way semantically in your engine.
+
+13. Explain column-list INSERT
+
+Example:
+
+INSERT INTO users (id, name, age)
+VALUES (1, 'Aditya', 22);
+Answer
+
+I don't directly insert the three supplied values into the physical row.
+
+First I map the provided column names to values.
+
+Then I iterate over the table's complete schema order.
+
+For each column:
+
+if the user supplied it, use that value
+if the value is DEFAULT, use the column's default
+if the column was omitted and has a default, use the default
+if the column was omitted and is nullable, use NULL
+otherwise reject the INSERT because a required value is missing
+
+This converts a partial user row into a complete internal row.
+
+That's a very good implementation answer.
+
+14. How are rows stored?
+
+Your answer:
+
+Rows are represented as Python lists internally, while the schema is represented separately through Column objects.
+
+I maintain the row data and schema metadata separately so operations such as constraint checks and column lookup can use the schema definition.
+
+15. What is a Record ID?
+
+This is a strong database-internals question.
+
+Answer
+
+I introduced a stable internal Record ID separate from the user's table columns.
+
+For example:
+
+Record ID 1 → [1, Aditya, 22, Delhi]
+Record ID 2 → [2, Rahul, 25, Mumbai]
+
+Indexes store Record IDs rather than entire rows.
+
+The Record ID also gives the database an internal identity for a row that doesn't depend on the values of the row itself.
+
+16. Why not use the primary key as the Record ID?
+Excellent question.
+Answer
+
+Because an internal record identity and a user-defined primary key are conceptually different.
+
+A primary key is part of the SQL schema and is user-visible.
+
+A Record ID is an internal storage identity.
+
+Keeping them separate makes indexes and storage independent from the user's schema decisions.
+
+This is a strong answer.
+
+17. Explain your hash index
+
+Your structure is essentially:
+
+value → set(record_ids)
+
+Example:
+
+22 → {1, 4, 8}
+25 → {2, 7}
+30 → {3}
+Answer
+
+My hash index is an in-memory dictionary-based index.
+
+The key is the indexed column value.
+
+The value is a set of internal Record IDs.
+
+A set is useful because multiple rows can have the same value, and I need to avoid duplicate Record IDs.
+
+Equality lookup is very simple:
+
+index.lookup(25)
+
+returns the Record IDs associated with 25.
+
+18. Why a set instead of a single Record ID?
+
+Because:
+
+age = 25
+
+could match:
+
+Record IDs {2, 7, 9, 14}
+
+So:
+
+A single value may correspond to many rows. Therefore the index maps each key to a set of Record IDs rather than one Record ID.
+
+19. What's the weakness of a hash index?
+Answer
+
+Hash indexes are naturally good for equality lookups but not for ordered range queries.
+
+For:
+
+WHERE age = 25
+
+hash is useful.
+
+For:
+
+WHERE age > 25
+
+hash does not naturally provide sorted traversal.
+
+This leads naturally to your B+Tree.
+
+20. Why did you implement B+Tree?
+Answer
+
+I wanted to understand why databases use ordered tree indexes instead of relying only on hash maps.
+
+A B+Tree keeps keys ordered and supports efficient traversal of ranges.
+
+That makes operations such as:
+
+WHERE salary > 70000
+
+or
+
+WHERE age BETWEEN 20 AND 30
+
+much more natural.
+
+21. Explain your B+Tree
+
+Your answer:
+
+My B+Tree contains internal nodes and leaf nodes.
+
+Internal nodes guide the search.
+
+Leaf nodes contain the actual indexed key-value entries.
+
+The leaves are linked, allowing sequential traversal across sorted keys.
+
+During insertion, when a node exceeds its capacity, I split it and propagate the separator information upward.
+
+This keeps the tree balanced.
+
+22. Why linked leaves?
+Answer
+
+Linked leaves make range traversal efficient conceptually.
+
+Once I find the first matching leaf for the lower bound, I can continue through neighboring leaves rather than repeatedly searching from the root.
+
+This is exactly the reason B+Trees are useful for range scans.
+
+23. Does your B+Tree support deletion?
+
+Be honest.
+
+Answer
+
+Full physical B+Tree deletion with node merging, underflow handling and root shrink is not implemented yet.
+
+The current index wrapper removes the Record ID from the bucket, but the empty key can remain structurally in the tree.
+
+I deliberately left full node deletion as a future learning extension.
+
+This answer is much better than pretending it exists.
+
+24. How do indexes stay synchronized?
+
+Very important.
+
+INSERT
+
+When a row is inserted:
+
+row added
+   ↓
+Record ID generated
+   ↓
+every relevant index updated
+DELETE
+row removed
+   ↓
+Record ID identified
+   ↓
+Record ID removed from indexes
+UPDATE
+
+This is more interesting:
+
+When an indexed column changes, I remove the Record ID from the old value's index entry and insert it under the new value.
+
+Example:
+
+age:
+25 → Record 7
+
+after:
+
+UPDATE users SET age = 30 WHERE id = 7;
+
+becomes:
+
+25 → ...
+30 → {7}
+25. What happens if an index becomes stale?
+Answer
+
+That would be a correctness problem because the planner could return wrong candidate records.
+
+That's why index maintenance is part of insert, update and delete operations rather than being treated as an optional background task.
+
+I also have synchronization tests to verify index behavior after mutations.
+
+26. Explain query planning
+Answer
+
+I implemented a lightweight rule-based planner rather than a full cost-based optimizer.
+
+It looks at the WHERE condition and determines whether a usable index exists.
+
+For equality conditions, a hash or B+Tree index may provide candidate Record IDs.
+
+For range conditions, the B+Tree is naturally more useful.
+
+Otherwise the executor falls back to a full scan.
+
+Conceptually:
+
+WHERE age = 25
+        ↓
+usable index?
+   ┌────┴────┐
+  YES        NO
+   ↓          ↓
+INDEX      FULL SCAN
+27. Why didn't you build a full optimizer?
+Answer
+
+Because the purpose of this project is to understand the fundamentals.
+
+A production optimizer involves statistics, cardinality estimation, join ordering, cost models and many other concerns.
+
+I wanted first to understand the core mechanism of identifying candidate records through indexes.
+
+This demonstrates scope control.
+
+28. What is FULL_SCAN?
+Answer
+
+In a full scan, the executor considers every row in the table and evaluates the condition.
+
+If the table has 10,000 rows, potentially all 10,000 rows are examined.
+
+29. What is INDEX access?
+Answer
+
+The index first narrows the candidate Record IDs.
+
+The executor then evaluates the actual rows associated with those candidates.
+
+I still preserve table ordering in my current implementation, so the learning benefit is mainly visible in reducing condition evaluations rather than pretending the physical row traversal is fully optimized.
+
+This last sentence is important because your stats architecture still visits rows to preserve ordering.
+
+30. Explain .explain
+Answer
+
+.explain is an educational diagnostic feature.
+
+It shows how PyDB plans a query, for example whether it considers:
+
+FULL_SCAN
+HASH INDEX
+B+TREE INDEX
+
+This lets me inspect the decision instead of treating execution as a black box.
+
+31. Explain .stats
+Answer
+
+You can say:
+
+.stats exposes execution metrics such as:
+
+access_path
+table_rows
+table_rows_visited
+index_candidates
+condition_evaluations
+rows_matched
+
+I added this specifically to make query execution observable.
+
+Then explain:
+
+In the current architecture, indexed execution may still visit the table rows because I preserve table order, but the number of condition evaluations can still demonstrate that the index narrowed the candidate set.
+
+That's a very strong honest answer.
+
+32. Explain persistence
+Answer
+
+PyDB persists its state to a JSON file.
+
+On save, the database serializes table definitions, rows, constraints, Record IDs and index metadata.
+
+On startup, the storage engine reads the JSON and reconstructs the Database and Table objects.
+
+33. Why JSON?
+Answer
+
+Because this project was about understanding persistence mechanics rather than building a binary page-oriented storage system.
+
+JSON is simple, human-readable and sufficient for a learning implementation.
+
+It allowed me to focus on database behavior first.
+
+A production database would need a much more sophisticated storage layer with pages, buffers, logging and recovery.
+
+34. What are the limitations of JSON storage?
+Answer
+
+JSON is not suitable for large-scale database storage because the entire logical structure is easy to rewrite and it doesn't provide the efficient page-level storage and recovery mechanisms used by real databases.
+
+It is appropriate for the scale and learning purpose of PyDB.
+
+35. Explain transactions
+Answer
+
+My transaction model is snapshot-based.
+
+When BEGIN is executed, the database stores a snapshot of the current table state and dirty state.
+
+Changes are applied normally.
+
+ROLLBACK reconstructs the tables from the snapshot.
+
+COMMIT persists the current state and clears the snapshot.
+
+Conceptually:
+
+BEGIN
+  ↓
+snapshot
+  ↓
+changes
+  ↓
+COMMIT → save
+   OR
+ROLLBACK → restore snapshot
+36. What does rollback restore?
+
+Your answer:
+
+The snapshot includes table state, including rows and metadata such as indexes and Record IDs.
+
+Therefore rollback can restore mutations involving rows, tables and indexes.
+
+37. Is this full ACID transaction support?
+Important interview question
+Answer
+
+No.
+
+My transaction system demonstrates basic atomic rollback and commit semantics, but it is not a full production-grade ACID implementation.
+
+It doesn't implement sophisticated concurrent isolation, write-ahead logging, crash recovery or MVCC.
+
+Never claim full ACID.
+
+38. Explain COMMIT vs ROLLBACK
+BEGIN
+   ↓
+changes
+   ↓
+COMMIT
+   → make current state durable
+
+versus:
+
+BEGIN
+   ↓
+changes
+   ↓
+ROLLBACK
+   → restore previous snapshot
+39. Why does .exit save?
+Answer
+
+Since PyDB is persistent, leaving the CLI with unsaved mutations could lose the user's work.
+
+So the CLI checks the database dirty state and saves before a clean exit.
+
+I also prevent exiting during an active transaction to avoid silently abandoning transactional state.
+
+40. Explain the CLI
+Answer
+
+I built a lightweight interactive shell around the database engine.
+
+It supports:
+
+SQL statements
+.help
+.tables
+.schema
+.indexes
+.explain
+.stats
+.exit
+.quit
+
+I also added multiline SQL input so statements such as CREATE TABLE can span multiple lines.
+
+41. What is the difference between SQL commands and CLI commands?
+SQL
+CREATE TABLE ...
+SELECT ...
+INSERT ...
+UPDATE ...
+DELETE ...
+CREATE INDEX ...
+DROP INDEX ...
+BEGIN;
+COMMIT;
+ROLLBACK;
+CLI metadata commands
+.help
+.tables
+.schema users
+.indexes users
+.explain ...
+.stats ...
+.exit
+
+Explain:
+
+SQL goes through the parser and executor. CLI meta-commands are handled by the shell itself.
+
+42. Why CREATE INDEX is interesting
+
+Example:
+
+CREATE INDEX age_idx
+ON users(age)
+USING BTREE;
+Answer
+
+This demonstrates that index creation itself is part of the database command language.
+
+The parser creates a CreateIndexQuery.
+
+The executor resolves the target table and asks the table to build the requested index.
+
+The table records the index metadata and builds the index from existing rows.
+
+The database is marked dirty so the definition is persisted.
+
+43. Why did you introduce named indexes?
+Answer
+
+Earlier, the table internally tracked indexes primarily by column.
+
+SQL syntax requires an explicit index name:
+
+CREATE INDEX age_idx ON users(age);
+
+So I separated:
+
+planner/index lookup structure
+
+from:
+
+SQL-visible index metadata
+
+That allowed me to preserve the existing planner architecture while adding named SQL indexes.
+
+This is a great architectural explanation.
+
+44. Why use both hash and B+Tree indexes?
+Answer
+
+Because they demonstrate two different indexing strategies.
+
+Hash:
+
+equality
+
+B+Tree:
+
+ordered lookup
+range queries
+
+Having both makes the query-planning behavior much more educational.
+
+45. How do you handle duplicate indexed values?
+
+Example:
+
+age = 25
+
+for multiple users.
+
+Answer
+
+The index maps the value to a set of Record IDs.
+
+Therefore:
+
+25 → {2, 5, 9}
+
+The index doesn't assume uniqueness unless the corresponding schema constraint requires it.
+
+46. How does aggregation work?
+
+Example:
+
+SELECT AVG(age) FROM users;
+Answer
+
+The executor first obtains the rows matching the WHERE condition.
+
+Then the aggregation layer evaluates the requested aggregate expression over those rows.
+
+For COUNT(column), NULL values are ignored.
+
+For COUNT(*), rows are counted regardless of individual column NULLs.
+
+Similar logic is used for SUM, AVG, MIN and MAX.
+
+47. Explain GROUP BY
+
+Example:
+
+SELECT city, COUNT(*)
+FROM users
+GROUP BY city;
+Answer
+
+I first obtain the relevant rows.
+
+Then I partition them into groups using the GROUP BY columns.
+
+For every group, the executor evaluates the SELECT expressions and aggregate functions.
+
+The result is one output row per group.
+
+Conceptually:
+
+Delhi       → rows 1, 3, 5
+Mumbai      → rows 2, 7
+Chandigarh  → row 4
+
+then:
+
+Delhi       → COUNT = 3
+Mumbai      → COUNT = 2
+Chandigarh  → COUNT = 1
+48. Explain HAVING vs WHERE
+
+This is a classic interview question.
+
+WHERE
+
+Filters individual rows before grouping.
+
+HAVING
+
+Filters groups after aggregation.
+
+Example:
+
+SELECT city, COUNT(*)
+FROM users
+WHERE age > 20
+GROUP BY city
+HAVING COUNT(*) > 1;
+
+Execution conceptually:
+
+Rows
+ ↓
+WHERE
+ ↓
+GROUP BY
+ ↓
+HAVING
+ ↓
+SELECT
+49. Explain aliases
+
+Example:
+
+SELECT salary AS income
+FROM users
+ORDER BY income DESC;
+Answer
+
+I treat aliases as metadata attached to SELECT expressions.
+
+For normal ORDER BY processing, I resolve whether the ORDER BY name refers to an alias and translate it back to the underlying expression/column before table-level ordering.
+
+That keeps aliases separate from actual schema column names.
+
+50. What is one of the hardest bugs you encountered?
+
+This is where you can tell a real project story.
+
+Strong example: NULL
+
+One challenging part was implementing NULL correctly.
+
+Initially it's tempting to treat None like a normal Python value, but Python comparisons such as None < 20 can fail.
+
+I therefore had to explicitly handle NULL semantics in conditions, sorting, aggregation, inserts, updates and persistence.
+
+That taught me that database semantics often differ from normal language semantics.
+
+51. Another good bug: test contamination
+
+You actually encountered this.
+
+Answer
+
+During the index SQL work, many unrelated tests suddenly failed with:
+
+Table 'users' already exists
+
+The root cause was not the database engine. The new index tests were accidentally sharing a persistent JSON database file.
+
+Once I changed the tests to use tmp_path, each test got an isolated database.
+
+That was a useful lesson in distinguishing application bugs from test-environment and state-isolation bugs.
+
+This is an excellent interview story because it demonstrates debugging.
+
+52. How did you test the project?
+Answer
+
+I built tests by component as well as end-to-end.
+
+I test:
+
+lexer
+parser
+query objects
+conditions
+table behavior
+database behavior
+executor behavior
+indexes
+B-Tree/B+Tree
+persistence
+query planning
+execution statistics
+transactions
+CLI
+SQL index management
+
+I also run a full regression suite after architectural changes.
+
+You currently have a reported full-suite result of:
+
+616 passed
+
+But don't say that forever; quote the current test result from your terminal when presenting the project.
+
+53. What would you improve next?
+
+Good answer:
+
+The next improvements I would make depend on whether the goal is learning or production.
+
+For learning, I'd explore:
+
+full B+Tree deletion
+joins
+composite indexes
+page-based storage
+buffer management
+write-ahead logging
+better query optimization
+concurrency
+stronger transaction isolation
+
+Those would let me move from a logical in-memory database toward a more realistic storage engine.
+
+54. What is NOT implemented?
+
+Be ready with this.
+
+Not a production DB
+No full SQL grammar
+No full join engine
+No cost-based optimizer
+No MVCC
+No sophisticated locking
+No WAL/crash recovery
+No full B+Tree physical deletion
+No page-based storage
+No concurrent transaction isolation
+
+This doesn't weaken the project.
+
+It shows that you understand scope.
+
+55. What would happen if the database had 10 million rows?
+Answer
+
+The current implementation would not scale well.
+
+JSON persistence, Python list-based row storage and the current scan behavior are not designed for that scale.
+
+The index structures would help with candidate lookup, but a production system would need page-based storage, a buffer pool, more efficient record access, cost-based planning and durable logging.
+
+56. What would you change to make it production-ready?
+
+Say:
+
+1. Page-oriented storage
+2. Buffer pool / caching
+3. WAL
+4. Crash recovery
+5. MVCC or locking
+6. Better transaction isolation
+7. Cost-based query optimizer
+8. Efficient B+Tree deletion
+9. Joins
+10. Better serialization/storage format
+11. Concurrency control
+12. Durability guarantees
+
+Then say:
+
+At that point, the project would become a much larger systems project.
+
+57. Complexity questions
+
+Know these approximately.
+
+Hash lookup
+
+Average:
+
+O(1)
+Hash insertion
+
+Average:
+
+O(1)
+B+Tree search
+O(log n)
+B+Tree insertion
+O(log n)
+Full table scan
+O(n)
+Sorting
+
+Typically:
+
+O(n log n)
+58. What is the biggest architectural decision you made?
+Answer
+
+The biggest decision was separating parsing from execution.
+
+I could have written a large class that directly parsed and executed SQL, but that would become difficult to maintain.
+
+Instead:
+
+SQL
+↓
+Lexer
+↓
+Parser
+↓
+Query Object
+↓
+Executor
+
+gave me clean boundaries and made the system much easier to test and extend.
+
+59. Why is this better than writing everything in one class?
+Answer
+
+Because changes become localized.
+
+Adding:
+
+CREATE INDEX
+
+mainly requires:
+
+lexer support
+parser support
+Query Object
+executor handling
+table/index integration
+
+rather than modifying one giant SQL execution function.
+
+60. How would you add JOIN?
+
+This is a great "future design" question.
+
+Answer
+
+I would introduce a Join representation at the query level, then extend the executor with a join phase.
+
+Initially I could implement nested-loop join:
+
+for each row in A:
+    for each row in B:
+        evaluate join condition
+
+Later I could add hash joins or indexed joins.
+
+A more sophisticated planner could choose the join algorithm based on available indexes and estimated cardinality.
+
+Excellent answer.
+
+61. How would you implement composite indexes?
+
+Example:
+
+CREATE INDEX idx
+ON users(city, age);
+Answer
+
+I would represent the index key as a tuple:
+
+("Delhi", 25)
+
+rather than a single scalar value.
+
+The B+Tree could then order tuple keys lexicographically.
+
+Planner logic would need to understand which query predicates can use the composite index.
+
+62. What if two rows have the same primary key?
+Answer
+
+The insertion is rejected before the row is committed to the table.
+
+The constraint check happens before the mutation becomes part of the final table state.
+
+63. What if an UPDATE violates UNIQUE?
+Answer
+
+I validate the new value before finalizing the update.
+
+The update should be rejected rather than leaving the table in an inconsistent state.
+
+64. What if UPDATE changes an indexed column?
+Answer
+
+I must update both the row and the relevant index entry.
+
+Specifically:
+
+old value → remove Record ID
+new value → add Record ID
+
+Otherwise the index becomes stale.
+
+65. What happens when you DROP INDEX?
+Answer
+
+The executor resolves the named index, the table removes its index structure and metadata, and the database is marked dirty so that the new schema/index state is persisted.
+
+66. Why have both indexes and index_definitions?
+Answer
+
+This is an important PyDB-specific question.
+
+Answer
+
+They represent two different concepts.
+
+indexes / bplus_indexes are execution structures organized by column so the planner can quickly access them.
+
+index_definitions stores SQL-visible index metadata such as:
+
+index name
+index type
+column
+
+Separating those allows me to support SQL index names without destroying the existing planner organization.
+
+67. Why not expose Record IDs in SELECT?
+Answer
+
+Record IDs are internal implementation details.
+
+They exist to support storage and indexing, but they are not part of the user's schema.
+
+Exposing them would couple the SQL interface to internal storage representation.
+
+68. Why is the project called PyDB?
+
+Simple:
+
+Python Database — a database engine implemented in Python.
+
+69. If interviewer asks: "Isn't this just SQLite recreated badly?"
+
+Do not become defensive.
+
+Say:
+
+It is intentionally much smaller than SQLite.
+
+SQLite is a mature production database with a sophisticated storage engine, optimizer, recovery mechanisms and many years of engineering.
+
+PyDB is a learning implementation where the value is that I understand how the major components work because I built simplified versions myself.
+
+That's the correct positioning.
+
+70. If interviewer says "What did YOU actually write?"
+
+Very important.
+
+Don't answer:
+
+"I used Python and implemented database stuff."
+
+Instead:
+
+I implemented the SQL tokenizer, parser, query model, executor, table and constraint handling, hash indexing, B+Tree indexing, query planning, transaction snapshot logic, JSON persistence and the interactive CLI myself as part of the project.
+
+Then be prepared to explain each one.
+
+71. The complete request flow you should memorize
+
+This is the single most important flow.
+
+User enters:
+
+SELECT name
+FROM users
+WHERE age > 25;
+
+
+        ↓
+
+      Lexer
+
+
+        ↓
+
+      Tokens
+
+
+        ↓
+
+      Parser
+
+
+        ↓
+
+  SelectQuery object
+
+
+        ↓
+
+   QueryExecutor
+
+
+        ↓
+
+     Database
+
+
+        ↓
+
+       Table
+
+
+        ↓
+
+ Query Planner / Index
+
+
+        ↓
+
+ Candidate Record IDs
+
+
+        ↓
+
+ Condition evaluation
+
+
+        ↓
+
+ Projection / Ordering / Limit
+
+
+        ↓
+
+     Result rows
+
+
+        ↓
+
+       CLI
+
+When you can explain this confidently, the project starts feeling much easier in an interview.
+
+72. Your 2-minute deep technical explanation
+
+Memorize the structure, not the exact words:
+
+PyDB is a simplified relational database engine implemented in Python to understand database internals.
+
+The system is layered. A SQL statement first passes through a lexer which converts it into tokens. The parser validates the token sequence and constructs a query object such as SelectQuery, InsertQuery or CreateIndexQuery.
+
+The QueryExecutor then executes that object against the Database and Table layers.
+
+Tables maintain schema, rows, constraints and stable internal Record IDs. Record IDs are separate from user-defined primary keys and are used by indexes.
+
+For indexing, I implemented both hash indexes and a B+Tree. Hash indexes provide efficient equality lookup, while B+Trees maintain ordered keys and support range searches.
+
+I also added a lightweight query planner that selects between full scans and available indexes, and execution statistics to make that decision observable.
+
+The database state is persisted to JSON and transactions are implemented using snapshots for rollback and commit behavior.
+
+Finally, I built a CLI that exposes SQL commands plus diagnostic commands such as .schema, .indexes, .explain and .stats.
+
+The project's main objective wasn't production scalability; it was understanding how the major pieces of a database work together.
+
+73. Questions you absolutely must be able to answer without hesitation
+
+Before putting PyDB on your resume, you should be comfortable answering these:
+
+1. Why did you build PyDB?
+2. Explain the architecture.
+3. Explain the SQL execution flow.
+4. What does the lexer do?
+5. What does the parser do?
+6. Why Query Objects?
+7. How are WHERE conditions represented?
+8. How are constraints enforced?
+9. How is NULL represented?
+10. How does column-list INSERT work?
+11. What is a Record ID?
+12. Why separate Record ID and primary key?
+13. How does the hash index work?
+14. Why use a set in the index?
+15. Why did you implement B+Tree?
+16. How does B+Tree insertion work?
+17. Why are B+Tree leaves linked?
+18. How does a range query work?
+19. Does your B+Tree support deletion?
+20. How are indexes synchronized after UPDATE?
+21. What happens after deleting an indexed row?
+22. How does query planning work?
+23. FULL SCAN vs INDEX?
+24. What does `.explain` show?
+25. What does `.stats` show?
+26. How does persistence work?
+27. Why JSON?
+28. How do transactions work?
+29. Is it fully ACID?
+30. How does rollback work?
+31. How does GROUP BY work?
+32. WHERE vs HAVING?
+33. How do aliases work?
+34. What happens during CREATE INDEX?
+35. What happens during DROP INDEX?
+36. Why separate index metadata from index structures?
+37. What happens if an indexed column is updated?
+38. What happens if UNIQUE is violated?
+39. What happens if PRIMARY KEY is duplicated?
+40. What are the limitations?
+41. How would you make it production-ready?
+42. How would you implement JOIN?
+43. How would you implement composite indexes?
+44. What was your hardest bug?
+45. How did you test it?
+74. The biggest interview mistake to avoid
+
+Don't spend the interview saying:
+
+"I used Python dictionary for the index."
+
+That's only the implementation detail.
+
+The stronger answer is:
+
+"I needed efficient equality lookup, so I chose a hash-based structure mapping indexed values to Record IDs. That gives average O(1) equality lookup. For range queries, that approach isn't naturally ordered, so I implemented a B+Tree."
+
+That's the difference between:
+
+"I wrote code."
+
+and:
+
+"I made engineering decisions."
+75. Your mental model for the whole project
+
+Remember PyDB as 8 concepts:
+
+1. PARSE
+   Understand SQL
+
+2. REPRESENT
+   Query Objects
+
+3. EXECUTE
+   Executor
+
+4. STORE
+   Tables + JSON persistence
+
+5. IDENTIFY
+   Record IDs
+
+6. INDEX
+   Hash + B+Tree
+
+7. PLAN
+   Choose access path
+
+8. TRANSACT
+   BEGIN / COMMIT / ROLLBACK
+
+Everything you built fits into those eight ideas.
+
+That is how you should think about PyDB in an interview—not as 20 Python files, but as one database pipeline with understandable responsibilities.

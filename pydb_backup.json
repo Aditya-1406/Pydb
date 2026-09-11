@@ -1,0 +1,59 @@
+{
+    "tables": {
+        "users": {
+            "name": "users",
+            "columns": [
+                {
+                    "name": "id",
+                    "data_type": "INT",
+                    "nullable": true,
+                    "unique": false,
+                    "default": null,
+                    "has_default": false
+                },
+                {
+                    "name": "name",
+                    "data_type": "TEXT",
+                    "nullable": true,
+                    "unique": false,
+                    "default": null,
+                    "has_default": false
+                },
+                {
+                    "name": "age",
+                    "data_type": "INT",
+                    "nullable": true,
+                    "unique": false,
+                    "default": null,
+                    "has_default": false
+                }
+            ],
+            "primary_key": "id",
+            "rows": [
+                [
+                    1,
+                    "Aditya",
+                    23
+                ],
+                [
+                    2,
+                    "Rahul",
+                    25
+                ],
+                [
+                    3,
+                    "Aman",
+                    30
+                ]
+            ],
+            "record_ids": [
+                1,
+                2,
+                3
+            ],
+            "next_record_id": 4,
+            "indexes": [],
+            "bplus_indexes": []
+        }
+    }
+}

@@ -1,0 +1,39 @@
+{
+    "tables": {
+        "users": {
+            "name": "users",
+            "columns": [
+                {
+                    "name": "id",
+                    "data_type": "INT",
+                    "nullable": true,
+                    "unique": false,
+                    "default": null,
+                    "has_default": false
+                },
+                {
+                    "name": "age",
+                    "data_type": "INT",
+                    "nullable": true,
+                    "unique": false,
+                    "default": null,
+                    "has_default": false
+                }
+            ],
+            "primary_key": null,
+            "rows": [],
+            "record_ids": [],
+            "next_record_id": 1,
+            "indexes": [],
+            "bplus_indexes": [
+                "age"
+            ],
+            "index_definitions": {
+                "age_idx": {
+                    "type": "BTREE",
+                    "column": "age"
+                }
+            }
+        }
+    }
+}
