@@ -1,2 +1,5 @@
 env/
 .pytest_cache/
+mydb.json
+pydb_backup.json
+pydb_cli_backup.json

@@ -1,0 +1,711 @@
+PyDB — Interview Answer Sheet
+1. "Tell me about your PyDB project."
+
+PyDB is a SQL-like relational database engine that I built from scratch in Python.
+
+I started with the goal of understanding what happens internally when a SQL query is executed instead of only using databases through an API.
+
+The first version implemented the complete query flow: SQL goes through a lexer and parser, gets converted into query objects, then the query executor operates on tables and storage. I added CRUD operations, constraints, transactions, persistence, hash indexes, B+Tree indexes and a basic query planner.
+
+Then I extended it into PyDB V2, which I call the Time Machine. The idea was to make database state versioned and explorable. Every mutation creates an immutable historical version. I added branches, checkout, diff, replay, historical query comparison, hypothetical index analysis and three-way branch merging with conflict detection.
+
+So V1 answers "What is the database now?", while V2 also answers "How did the database get here, how did it evolve, and what happens if two histories are combined?"
+
+2. "Why did you build a database? There are already PostgreSQL and MySQL."
+
+I wasn't trying to replace PostgreSQL or MySQL. My purpose was to understand database internals by implementing a simplified engine myself.
+
+Using PostgreSQL would teach me how to use a database. Building PyDB taught me what happens inside the database when I execute a query.
+
+For example, implementing indexes forced me to understand why a hash index is useful for equality while a B+Tree is useful for ordered range queries. Implementing versioned merges forced me to think about immutable state, ancestry and conflict resolution.
+
+This is a very important distinction.
+
+Don't say:
+
+"I created a better PostgreSQL."
+
+Say:
+
+"I built a simplified database engine to understand the concepts behind real database systems."
+
+3. "How does your architecture work?"
+
+Draw this:
+
+SQL
+ ↓
+Lexer
+ ↓
+Parser
+ ↓
+Query Object
+ ↓
+QueryExecutor
+ ↓
+Database
+ ↓
+Table
+ ├── Rows
+ ├── Constraints
+ ├── Hash Index
+ └── B+Tree Index
+ ↓
+Storage
+
+Then explain:
+
+The lexer breaks the SQL string into tokens.
+
+The parser converts those tokens into structured query objects such as SelectQuery, InsertQuery or UpdateQuery.
+
+The QueryExecutor takes those objects and performs the operation.
+
+The Database manages tables, transactions, persistence and, in V2, version history.
+
+The Table owns the actual rows, schema, constraints and indexes.
+
+Finally, the storage layer persists the serialized state.
+
+4. "How did you create it from scratch?"
+
+I didn't start by writing everything at once. I built it incrementally.
+
+First I implemented the table and basic CRUD operations.
+
+Then I added a lexer and parser so the system could understand SQL-like commands.
+
+After that I introduced a query-execution layer so parsing and execution were separated.
+
+Then I added constraints, NULL handling, transactions and persistence.
+
+Once the basic engine was stable, I introduced indexing and query planning.
+
+Finally, V2 was built on top of the existing engine by treating database states as immutable historical versions and connecting those versions through branches.
+
+A strong phrase:
+
+"I built the engine incrementally and kept the layers separate so new functionality didn't require rewriting the core."
+
+5. "How does a SELECT query work in your system?"
+
+Suppose:
+
+SELECT name
+FROM users
+WHERE salary > 50000;
+
+Say:
+
+The lexer first tokenizes SELECT, name, FROM, users, WHERE, salary, > and 50000.
+
+The parser turns those tokens into a SelectQuery object containing the table, selected columns and condition.
+
+The executor identifies the table and asks the table's planning logic for an access path.
+
+If there is a suitable B+Tree index on salary, the planner can use a range lookup instead of scanning every row.
+
+The candidate rows are then evaluated against the condition, projected into the requested columns, and returned.
+
+6. "How did you implement indexing?"
+
+I implemented two simplified index structures.
+
+The first is a hash index, which maps a value to the internal Record IDs containing that value. It's useful for equality lookups.
+
+The second is a B+Tree-based index, which keeps keys ordered and supports equality and range lookups.
+
+Whenever a row is inserted, updated or deleted, the corresponding indexes are updated as well. This was important because an index is derived data, so it must stay consistent with the table.
+
+Example:
+
+Hash:
+
+50000 → {7, 14, 22}
+
+B+Tree:
+
+10000
+20000
+30000
+40000
+50000
+60000
+
+Then:
+
+WHERE salary > 50000
+
+can use the ordered structure.
+
+7. "How does your query planner work?"
+
+My planner is deliberately simplified, but it chooses between different access paths based on the predicate and available indexes.
+
+For an equality predicate, it can choose a hash index or B+Tree equality lookup.
+
+For an ordered range predicate such as salary > 50000, it can choose a B+Tree range lookup.
+
+Otherwise it falls back to a full table scan.
+
+I also exposed .explain and .stats so I could see not just the result but the selected access path and execution statistics.
+
+8. "Why did you use internal Record IDs?"
+
+This is a very good interview question.
+
+I separated internal row identity from user-visible primary keys.
+
+Every row gets an internal Record ID that the storage engine uses for indexing and historical comparison.
+
+That gives me a stable physical identity even when the user-facing columns change.
+
+This became especially important in V2 because branches can create rows independently. A numeric internal ID created after a branch split is branch-local and doesn't automatically mean two rows are the same logical row.
+
+That answer demonstrates deeper thinking.
+
+9. "How did you implement transactions?"
+
+I implemented transactions using a database snapshot.
+
+When BEGIN is called, I save the current database state. Mutations can then happen against the live state.
+
+On COMMIT, the changes are preserved and represented as a single historical transaction version.
+
+On ROLLBACK, I reconstruct the previous state from the snapshot.
+
+This is a simplified transaction model; it isn't intended to reproduce PostgreSQL's MVCC or locking system.
+
+That final sentence is important because it shows technical honesty.
+
+10. "What is the most interesting part of V2?"
+
+Say:
+
+The most interesting part for me was turning the database into a versioned system.
+
+Instead of storing only the current database state, every mutation produces an immutable snapshot.
+
+Those versions form a history, and branches are basically named pointers to versions.
+
+Once merging was introduced, the structure stopped being a simple tree and became a DAG because a merge version has two parents.
+
+Then draw:
+
+        V5 MERGE
+       /        \
+     V3          V4
+      \          /
+          V2
+
+Then:
+
+That was one of the main conceptual jumps from V1 to V2.
+
+11. "How does .merge work?"
+
+This is probably the most important PyDB interview question.
+
+Say:
+
+I use a three-way merge.
+
+I take three states:
+
+the common ancestor,
+the current target branch,
+the source branch.
+
+For every piece of state, I compare what changed relative to the common ancestor.
+
+If only one side changed something, I keep that change.
+
+If both sides made the same change, I keep it once.
+
+If both sides changed the same logical data differently, I report a conflict.
+
+Example:
+
+Base       = "Aditya"
+Main       = "Main"
+Experiment = "Experiment"
+
+Therefore:
+
+CONFLICT
+12. "How did you handle Record ID collisions during merge?"
+
+This is an excellent advanced question.
+
+A Record ID created before branching can represent the same logical row across both branches.
+
+But a Record ID created independently after branching is branch-local.
+
+So I cannot assume:
+
+Record ID 2 == same row.
+
+When two independently created rows happen to receive the same internal ID, I preserve both rows and remap one internal ID instead of treating them as an update conflict.
+
+The source-side ID is kept and the target-side row is remapped in my current deterministic merge policy.
+
+Then add:
+
+I also separately validate primary-key constraints because physical Record ID collision handling and logical primary-key uniqueness are different problems.
+
+That is a very strong answer.
+
+13. "What happens if two branches update the same row differently?"
+
+If that row existed in the common ancestor, its Record ID represents a shared logical identity.
+
+Suppose:
+
+Base = [1, "Aditya"]
+
+Main = [1, "Main"]
+
+Experiment = [1, "Experiment"]
+
+Both branches changed the same logical row differently, so the merge reports a row_conflict.
+
+I intentionally don't silently choose one side.
+
+14. "What happens if one branch deletes a row and the other updates it?"
+
+That's also a conflict.
+
+One branch says the row should no longer exist, while the other says it should exist with a different value.
+
+There isn't enough information to safely choose automatically, so I report a conflict.
+
+15. "How do you make sure a failed merge doesn't corrupt the database?"
+
+I don't modify the live state while calculating the merge.
+
+I first reconstruct the ancestor, target and source states and build a proposed merged state.
+
+Then I validate the merged tables and constraints.
+
+Only after validation succeeds do I restore the live database and create the merge version.
+
+So if there is a conflict, there is no merge commit and the existing branch heads and database state remain unchanged.
+
+That is your atomicity answer.
+
+16. "Why did you make historical versions immutable?"
+
+Because otherwise history would be meaningless.
+
+If version 2 and the live table shared the same mutable row list, then a later UPDATE could accidentally modify what version 2 claimed happened in the past.
+
+So historical states are deep-copied and treated as immutable snapshots.
+
+I also wrote dedicated regression tests for INSERT, UPDATE, DELETE and branch divergence to make sure later mutations cannot alter old versions.
+
+17. "Why do you need a DAG instead of a normal tree?"
+
+Before merging, each version normally has one parent, so the history behaves like a tree.
+
+After a merge, the resulting version represents two histories simultaneously. It therefore has a normal parent for the target branch and a second parent for the source branch.
+
+That makes the history a DAG.
+
+I had to update ancestor traversal so it follows both parent relationships.
+
+18. "What is .diff doing?"
+
+.diff compares two historical database states semantically rather than just doing a raw JSON comparison.
+
+It identifies tables added or removed, schema changes, index changes, rows added or removed, and rows updated.
+
+When comparing branches, I also use their common ancestor so independently-created Record IDs aren't incorrectly reported as updates.
+
+19. "What is .replay?"
+
+.replay re-executes the SQL associated with a historical mutation against the current database.
+
+That's different from .checkout.
+
+.checkout restores a historical state.
+
+.replay executes an old operation again and therefore creates a new version.
+
+Very important:
+
+checkout = restore state
+replay   = repeat operation
+20. "What is .compare?"
+
+.compare lets me run the same SELECT against two historical versions and compare both the logical result and execution behavior.
+
+For example, a query could return the same rows in both versions while one version uses a full scan and the other uses a B+Tree range lookup.
+
+So it helps analyze how database evolution affects query behavior.
+
+21. "What is .whatif?"
+
+.whatif lets me simulate the effect of creating an index without actually modifying the database.
+
+I create a temporary copy of the current table, add the hypothetical index only to that copy, run the same SELECT against both versions, and compare the execution statistics.
+
+That lets me answer questions like:
+
+"Would adding a B+Tree on salary change the access path?"
+
+22. "Why did you build .compare and .whatif?"
+
+I wanted V2 to be more than version rollback.
+
+Version history tells me what happened.
+
+Diff tells me what changed.
+
+Replay lets me reproduce an operation.
+
+Compare lets me study how queries behave across historical states.
+
+What-if lets me experiment with database design without applying the change.
+
+Together, they make the history useful for analysis, not just recovery.
+
+23. "What testing did you do?"
+
+Say this confidently:
+
+I developed the project incrementally with regression testing after each major feature.
+
+I tested CRUD, parsing, constraints, indexes, transactions, persistence, version history, branches, checkout, diff, replay, historical comparison, what-if analysis, merge, DAG traversal, immutability, atomicity and CLI behavior.
+
+I also wrote targeted tests for edge cases such as Record ID collisions, primary-key conflicts, delete-versus-update conflicts, repeated merges and persistence after restart.
+
+Then give your current result:
+
+731+ original/core tests
++
+V2 hardening tests
+=
+full suite passing
+
+Use the exact final pytest number from your latest run in the actual interview rather than memorizing a stale number.
+
+24. "What was the hardest bug?"
+
+This is a great story.
+
+One of the hardest bugs was related to historical snapshot mutation during branching and merging.
+
+I initially thought the merge algorithm was wrong because a conflicting update was being reported as a clean merge.
+
+After tracing the historical states, I found that mutable nested table data could be shared between the live database and historical snapshots.
+
+That meant a later branch mutation could change what should have been an immutable ancestor.
+
+I fixed that by deep-copying serialized state when creating and restoring historical versions and then added explicit immutability tests.
+
+That was a good lesson that correctness problems in stateful systems aren't always caused by the algorithm itself—they can come from object ownership and mutation.
+
+This is an excellent interview story because it shows debugging ability, not just coding.
+
+25. "Why Python?"
+
+I chose Python because I wanted to focus on the database concepts rather than spending most of my time on language overhead.
+
+Python also made it easy to build the lexer/parser, data structures, serialization and test infrastructure quickly.
+
+For a learning-oriented database engine, it gave me fast iteration while still letting me implement indexes, trees, persistence and transactions explicitly.
+
+26. "Could you create this again now from scratch?"
+
+This is where you should be realistic.
+
+Yes. I could recreate the architecture from scratch now because I understand the design rather than just the implementation.
+
+I would start with the same layered structure:
+
+Lexer → Parser → Query Objects → Executor → Database → Table → Storage
+
+Then I'd implement the features incrementally and write tests alongside them.
+
+I would also design historical state ownership and Record ID semantics earlier because those became important once branching and merging were introduced.
+
+That last sentence is especially good because it shows you've learned from the project.
+
+27. "Would you build it the same way again?"
+
+Don't say simply yes.
+
+I would keep the high-level architecture, but I would make a few design decisions earlier.
+
+First, I'd establish immutable state boundaries from the beginning.
+
+Second, I'd define the distinction between physical Record IDs and logical primary keys before implementing branching.
+
+Third, I'd design the history model with DAG semantics in mind rather than extending a single-parent version model later.
+
+The current implementation evolved incrementally, which was good for learning, but a second implementation could incorporate those lessons earlier.
+
+That is a much stronger answer than pretending your first implementation was perfect.
+
+28. "Could you implement this using PostgreSQL?"
+
+Yes, but it would become a different project.
+
+PostgreSQL could provide the underlying storage, transactions and indexing, while I could build the version-management and analysis layer on top.
+
+But then I wouldn't be implementing the database engine itself.
+
+For this project, I intentionally wanted to control the storage and execution layers so I could demonstrate understanding of database internals.
+
+29. "Could you create this in Java?"
+
+Yes.
+
+The architecture is language-independent.
+
+I could recreate the same pipeline in Java using classes for tokens, parser nodes, query objects, executor, table structures, indexes, storage and version history.
+
+The implementation details would change, but the architectural concepts would remain the same.
+
+This connects nicely with your Java learning path.
+
+30. "What other technology could you use instead?"
+
+For the database itself:
+
+Python
+Java
+C++
+Rust
+Go
+
+For storage:
+
+JSON
+binary files
+page-oriented files
+SQLite
+PostgreSQL
+
+For indexes:
+
+Hash table
+B+Tree
+LSM Tree
+
+For transaction/versioning:
+
+Snapshot-based
+WAL-based
+MVCC
+Copy-on-write
+
+Then explain:
+
+I chose the simpler implementations because the primary purpose was learning and demonstrating the concepts. A production system would use significantly more sophisticated storage, concurrency and recovery mechanisms.
+
+31. "Could you make it production-ready?"
+
+Don't claim yes immediately.
+
+Say:
+
+The current PyDB is a serious educational and systems project, but I wouldn't call it production-ready.
+
+To move toward production, I would need a durable write-ahead log, crash recovery, a page-oriented storage engine, buffer management, concurrency control, stronger transaction isolation, more complete SQL compatibility, better query optimization and much stronger durability guarantees.
+
+The current version demonstrates the architectural concepts, while productionizing it would be another major engineering phase.
+
+That's honest and technically strong.
+
+32. "What would you improve next?"
+
+You can answer in phases.
+
+Storage
+
+Replace JSON snapshots with a page-oriented storage engine and durable WAL.
+
+Transactions
+
+Introduce proper concurrency control and MVCC-style version visibility.
+
+Query optimizer
+
+Move from rule-based access-path selection toward cost-based optimization.
+
+SQL
+
+Support a larger subset of SQL.
+
+Versioning
+
+Improve merge conflict resolution and perhaps add explicit conflict-resolution commands.
+
+33. "Is this innovative?"
+
+Be careful.
+
+Don't say:
+
+"Nobody has done this."
+
+Say:
+
+The individual ideas aren't new concepts in isolation—version control, immutable snapshots, branching and merging all exist elsewhere.
+
+What I built is a database engine that combines those ideas directly into the database's own historical state and query workflow.
+
+I would describe it as a distinctive portfolio/system-design project rather than claiming that the underlying concepts are unprecedented.
+
+That is the safest and strongest way to present it.
+
+34. "Why call it Time Machine?"
+
+Because V2 isn't limited to restoring a backup.
+
+I can move through historical states, compare different states, replay old operations, analyze query behavior across versions, simulate indexing decisions, create alternative branches and merge divergent database histories.
+
+So the idea is closer to exploring the evolution of the database rather than simply restoring it.
+
+35. "Give me the project in 30 seconds."
+
+Memorize this:
+
+PyDB is a SQL-like database engine I built from scratch in Python to understand database internals. V1 implements parsing, query execution, constraints, transactions, persistence, indexing and basic query planning. In V2, I extended it into a versioned database called Time Machine, where every mutation creates an immutable historical state. I added branches, checkout, diff, replay, historical query comparison, hypothetical index analysis and three-way merges with conflict detection and atomic failure handling.
+
+36. "Explain the project in 10 seconds."
+
+I built a small database engine from scratch, then turned it into a version-controlled database where data can branch, be compared, replayed and merged.
+
+37. The most important diagram to remember
+
+Whenever you get stuck in an interview, draw:
+
+                    SQL
+                     ↓
+                   Lexer
+                     ↓
+                   Parser
+                     ↓
+                Query Object
+                     ↓
+               QueryExecutor
+                     ↓
+                  Database
+                  /      \
+                Table   History
+                /  \        |
+             Index Storage Version
+                       ↓
+                     Branch
+                       ↓
+                      Diff
+                       ↓
+                    Replay
+                       ↓
+                    Compare
+                       ↓
+                    What-if
+                       ↓
+                     Merge
+                      / \
+                 Target Source
+                      \ /
+                     DAG
+
+Then say:
+
+"This is the architecture I designed the project around."
+
+38. If interviewer says: "Show me how you'd create it again right now."
+
+Give them this sequence:
+
+1. Create Token classes.
+2. Build Lexer.
+3. Build Parser.
+4. Define Query Objects.
+5. Build QueryExecutor.
+6. Build Table and schema layer.
+7. Add constraints.
+8. Add storage/persistence.
+9. Add hash indexing.
+10. Add B+Tree.
+11. Add query planning.
+12. Add transactions.
+13. Add immutable Version.
+14. Add HistoryManager.
+15. Add branches.
+16. Add historical operations.
+17. Add three-way merge.
+18. Add DAG traversal.
+19. Add persistence for the DAG.
+20. Add CLI commands.
+21. Add regression tests.
+
+And the key phrase:
+
+"I would implement it in layers and validate each layer before moving to the next."
+
+39. One thing you should never do in the interview
+
+Don't describe PyDB as:
+
+"I made a mini database with some SQL commands."
+
+That undersells it enormously.
+
+Describe it as:
+
+"I implemented a layered SQL processing engine and then extended its state model into an immutable, branch-aware historical DAG with three-way merge semantics."
+
+That's technically accurate and communicates the depth of the project.
+
+40. Your strongest technical keywords
+
+When appropriate, these are the concepts behind the project:
+
+Lexical analysis
+Parsing
+Query objects
+Query execution
+Relational data model
+Constraints
+Indexing
+Hash indexing
+B+Tree
+Range lookup
+Query planning
+Persistence
+Transactions
+Snapshots
+Immutability
+Version graph
+Branching
+DAG
+Three-way merge
+Conflict detection
+Atomicity
+Historical replay
+Query comparison
+Hypothetical planning
+Regression testing
+
+The trick is not to throw these words around. Use them when explaining an actual implementation decision.
+
+41. Final interview mindset
+
+The interviewer is likely to care less about whether you remember every method name and more about whether you can answer:
+
+Why did you design it this way?
+What problem does this solve?
+What happens internally?
+What alternatives did you consider?
+What bug did you encounter?
+How did you debug it?
+What are the limitations?
+How would you improve it?
+Could you build it again?
+
+For PyDB, you're now in a good position because you can answer all of those with actual implementation experience rather than theoretical explanations.

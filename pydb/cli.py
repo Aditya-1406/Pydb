@@ -95,14 +95,26 @@ class PyDBCLI:
         self._print(
             "\n"
             "PyDB commands:\n"
-            "  .help                 Show this help message\n"
-            "  .tables               List all tables\n"
-            "  .schema <table>      Show table schema\n"
-            "  .indexes <table>     Show table indexes\n"
-            "  .explain <SELECT>    Show SELECT access path\n"
-            "  .stats <SELECT>      Show SELECT execution statistics\n"
-            "  .exit                 Exit PyDB\n"
-            "  .quit                 Exit PyDB\n"
+            "  .help                  Show this help message\n"
+            "  .tables                List all tables\n"
+            "  .schema <table>        Show table schema\n"
+            "  .indexes <table>       Show table indexes\n"
+            "  .history               Show database version history\n"
+            "  .checkout <version>    Restore a historical version\n"
+            "  .branches              Show database branches\n"
+            "  .create_branch <name>  Create a branch at current version\n"
+            "  .use <branch>          Switch to a branch\n"
+            "  .merge <branch>        Merge a branch into current branch\n"
+            "  .diff <v1> <v2>        Compare two database versions\n"
+            "  .replay <version>      Replay a historical mutation\n"
+            "  .compare <v1> <v2> <SELECT>\n"
+            "                         Compare a SELECT across versions\n"
+            "  .whatif <CREATE INDEX>; <SELECT>\n"
+            "                         Analyze a hypothetical index\n"
+            "  .explain <SELECT>      Show SELECT access path\n"
+            "  .stats <SELECT>        Show SELECT execution statistics\n"
+            "  .exit                  Exit PyDB\n"
+            "  .quit                  Exit PyDB\n"
         )
 
     # ------------------------------------------------------------------
@@ -224,6 +236,509 @@ class PyDBCLI:
                 rows
             )
         )
+
+    # ------------------------------------------------------------------
+    # HISTORY
+    # ------------------------------------------------------------------
+
+    def _show_history(self):
+        """
+        Display the committed database version history.
+
+        History is managed by the Database's HistoryManager.
+
+        Each version contains:
+
+            - version ID
+            - parent version ID
+            - branch name
+            - operation
+        """
+        history_manager = getattr(
+            self.database,
+            "history",
+            None
+        )
+
+        if history_manager is None:
+            raise RuntimeError(
+                "Database history is not available"
+            )
+
+        versions = history_manager.get_history()
+
+        if not versions:
+            self._print("No history.")
+            return
+
+        rows = []
+
+        for version in versions:
+            parent_version = (
+                "-"
+                if version.parent_version_id is None
+                else version.parent_version_id
+            )
+
+            rows.append(
+                [
+                    version.version_id,
+                    parent_version,
+                    version.branch_name,
+                    version.operation
+                ]
+            )
+
+        self._print(
+            self._format_table(
+                [
+                    "version",
+                    "parent",
+                    "branch",
+                    "operation"
+                ],
+                rows
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # CHECKOUT
+    # ------------------------------------------------------------------
+
+    def _checkout_version(self, version_id):
+        """
+        Restore the active database state to a historical version.
+
+        Checkout does not create a new version. It only changes the
+        current historical position.
+        """
+        version = self.database.checkout(
+            version_id
+        )
+
+        self._print(
+            f"Checked out version {version.version_id}."
+        )
+
+    # ------------------------------------------------------------------
+    # BRANCHES
+    # ------------------------------------------------------------------
+
+    def _show_branches(self):
+        """
+        Display all branches and their current head versions.
+
+        The currently active branch is marked with an asterisk.
+        """
+        branches = self.database.get_branches()
+
+        if not branches:
+            self._print("No branches.")
+            return
+
+        current_branch = (
+            self.database.get_current_branch()
+        )
+
+        rows = []
+
+        for branch_name, head_version in branches.items():
+            rows.append(
+                [
+                    "*" if branch_name == current_branch else "",
+                    branch_name,
+                    head_version
+                ]
+            )
+
+        self._print(
+            self._format_table(
+                [
+                    "",
+                    "branch",
+                    "head"
+                ],
+                rows
+            )
+        )
+
+    def _create_branch(self, branch_name):
+        """
+        Create a new branch from the current historical version.
+
+        Creating a branch does not switch to it automatically.
+        """
+        self.database.create_branch(
+            branch_name
+        )
+
+        current_version = (
+            self.database.get_current_version()
+        )
+
+        version_id = (
+            current_version.version_id
+            if current_version is not None
+            else "-"
+        )
+
+        self._print(
+            f"Branch '{branch_name}' created "
+            f"at version {version_id}."
+        )
+
+    def _use_branch(self, branch_name):
+        """
+        Switch to an existing branch.
+
+        The branch's head version becomes the active database
+        state.
+        """
+        version = self.database.switch_branch(
+            branch_name
+        )
+
+        self._print(
+            f"Switched to branch '{branch_name}' "
+            f"at version {version.version_id}."
+        )
+
+    # ------------------------------------------------------------------
+    # MERGE
+    # ------------------------------------------------------------------
+
+    def _show_merge(self, source_branch):
+        """
+        Merge a source branch into the currently active branch.
+
+        The underlying Database.merge_branch() method performs
+        the actual three-way merge.
+
+        This method is responsible only for CLI presentation.
+        """
+        result = self.database.merge_branch(
+            source_branch
+        )
+
+        self._print(
+            "MERGE"
+        )
+
+        self._print(
+            "--------------------------------"
+        )
+
+        self._print(
+            f"Target branch : "
+            f"{result['target_branch']}"
+        )
+
+        self._print(
+            f"Source branch : "
+            f"{result['source_branch']}"
+        )
+
+        self._print(
+            f"Ancestor      : "
+            f"{result['ancestor_version']}"
+        )
+
+        self._print()
+
+        # --------------------------------------------------
+        # Successful merge
+        # --------------------------------------------------
+
+        if result["status"] == "MERGED":
+            self._print(
+                "Status: MERGED"
+            )
+
+            self._print(
+                f"Merge version : "
+                f"{result['merged_version']}"
+            )
+
+            self._print(
+                f"Target parent : "
+                f"{result['target_version']}"
+            )
+
+            self._print(
+                f"Source parent : "
+                f"{result['source_version']}"
+            )
+
+            return
+
+        # --------------------------------------------------
+        # Nothing to merge
+        # --------------------------------------------------
+
+        if result["status"] == "UP_TO_DATE":
+            self._print(
+                "Status: UP TO DATE"
+            )
+
+            self._print(
+                f"Current version: "
+                f"{result['merged_version']}"
+            )
+
+            return
+
+        # --------------------------------------------------
+        # Merge conflicts
+        # --------------------------------------------------
+
+        if result["status"] == "CONFLICT":
+            self._print(
+                "Status: CONFLICT"
+            )
+
+            self._print()
+
+            conflicts = result.get(
+                "conflicts",
+                []
+            )
+
+            self._print(
+                f"{len(conflicts)} conflict"
+                f"{'' if len(conflicts) == 1 else 's'} detected."
+            )
+
+            self._print()
+
+            for index, conflict in enumerate(
+                conflicts,
+                start=1
+            ):
+                self._print(
+                    f"Conflict {index}"
+                )
+
+                conflict_type = conflict.get(
+                    "type",
+                    "unknown"
+                )
+
+                self._print(
+                    f"  Type: "
+                    f"{conflict_type}"
+                )
+
+                if "table" in conflict:
+                    self._print(
+                        f"  Table: "
+                        f"{conflict['table']}"
+                    )
+
+                if "record_id" in conflict:
+                    self._print(
+                        f"  Record ID: "
+                        f"{conflict['record_id']}"
+                    )
+
+                if "property" in conflict:
+                    self._print(
+                        f"  Property: "
+                        f"{conflict['property']}"
+                    )
+
+                if "base" in conflict:
+                    self._print(
+                        f"  Base: "
+                        f"{conflict['base']}"
+                    )
+
+                if "target" in conflict:
+                    self._print(
+                        f"  Target: "
+                        f"{conflict['target']}"
+                    )
+
+                if "source" in conflict:
+                    self._print(
+                        f"  Source: "
+                        f"{conflict['source']}"
+                    )
+
+                if "reason" in conflict:
+                    self._print(
+                        f"  Reason: "
+                        f"{conflict['reason']}"
+                    )
+
+                self._print()
+
+            return
+
+        # --------------------------------------------------
+        # Defensive fallback.
+        # --------------------------------------------------
+
+        self._print(
+            f"Status: {result['status']}"
+        )
+
+    # ------------------------------------------------------------------
+    # VERSION DIFF
+    # ------------------------------------------------------------------
+
+    def _show_diff(
+        self,
+        before_version,
+        after_version
+    ):
+        """
+        Display a logical comparison between two database versions.
+
+        The diff shows:
+
+            - tables added
+            - tables removed
+            - schema changes
+            - index changes
+            - rows added
+            - rows removed
+            - rows updated
+        """
+        diff = self.database.diff_versions(
+            before_version,
+            after_version
+        )
+
+        self._print(
+            f"DIFF: version "
+            f"{diff['before_version']} "
+            f"-> "
+            f"{diff['after_version']}"
+        )
+
+        self._print()
+
+        # ---------------------------------
+        # Tables added
+        # ---------------------------------
+
+        if diff["tables_added"]:
+            self._print(
+                "Tables added:"
+            )
+
+            for table_name in diff["tables_added"]:
+                self._print(
+                    f"  + {table_name}"
+                )
+
+            self._print()
+
+        # ---------------------------------
+        # Tables removed
+        # ---------------------------------
+
+        if diff["tables_removed"]:
+            self._print(
+                "Tables removed:"
+            )
+
+            for table_name in diff["tables_removed"]:
+                self._print(
+                    f"  - {table_name}"
+                )
+
+            self._print()
+
+        # ---------------------------------
+        # Changed tables
+        # ---------------------------------
+
+        for table_name, table_diff in (
+            diff["tables_changed"].items()
+        ):
+            self._print(
+                f"Table: {table_name}"
+            )
+
+            changed_anything = False
+
+            # Schema.
+            if table_diff["schema_changed"]:
+                self._print(
+                    "  ~ schema changed"
+                )
+                changed_anything = True
+
+            # Index definitions.
+            if table_diff["indexes_changed"]:
+                self._print(
+                    "  ~ indexes changed"
+                )
+                changed_anything = True
+
+            # Added rows.
+            for entry in table_diff[
+                "rows_added"
+            ]:
+                self._print(
+                    f"  + Record "
+                    f"{entry['record_id']}: "
+                    f"{entry['row']}"
+                )
+                changed_anything = True
+
+            # Removed rows.
+            for entry in table_diff[
+                "rows_removed"
+            ]:
+                self._print(
+                    f"  - Record "
+                    f"{entry['record_id']}: "
+                    f"{entry['row']}"
+                )
+                changed_anything = True
+
+            # Updated rows.
+            for entry in table_diff[
+                "rows_updated"
+            ]:
+                self._print(
+                    f"  ~ Record "
+                    f"{entry['record_id']}:"
+                )
+
+                self._print(
+                    f"      before: "
+                    f"{entry['before']}"
+                )
+
+                self._print(
+                    f"      after:  "
+                    f"{entry['after']}"
+                )
+
+                changed_anything = True
+
+            if not changed_anything:
+                self._print(
+                    "  ~ changed"
+                )
+
+            self._print()
+
+        # ---------------------------------
+        # No changes
+        # ---------------------------------
+
+        if (
+            not diff["tables_added"]
+            and not diff["tables_removed"]
+            and not diff["tables_changed"]
+        ):
+            self._print(
+                "No changes."
+            )
 
     # ------------------------------------------------------------------
     # TABLE FORMATTING
@@ -539,10 +1054,6 @@ class PyDBCLI:
         Python values. Only the CLI presentation changes.
         """
 
-        # ---------------------------------
-        # INSERT
-        # ---------------------------------
-
         if isinstance(
             query,
             InsertQuery
@@ -551,10 +1062,6 @@ class PyDBCLI:
                 "1 row inserted."
             )
             return
-
-        # ---------------------------------
-        # UPDATE
-        # ---------------------------------
 
         if isinstance(
             query,
@@ -569,10 +1076,6 @@ class PyDBCLI:
             )
             return
 
-        # ---------------------------------
-        # DELETE
-        # ---------------------------------
-
         if isinstance(
             query,
             DeleteQuery
@@ -586,10 +1089,6 @@ class PyDBCLI:
             )
             return
 
-        # ---------------------------------
-        # CREATE TABLE
-        # ---------------------------------
-
         if isinstance(
             query,
             CreateTableQuery
@@ -598,10 +1097,6 @@ class PyDBCLI:
                 f"Table '{query.table_name}' created."
             )
             return
-
-        # ---------------------------------
-        # DROP TABLE
-        # ---------------------------------
 
         if isinstance(
             query,
@@ -612,10 +1107,6 @@ class PyDBCLI:
             )
             return
 
-        # ---------------------------------
-        # BEGIN
-        # ---------------------------------
-
         if isinstance(
             query,
             BeginQuery
@@ -624,10 +1115,6 @@ class PyDBCLI:
                 "Transaction started."
             )
             return
-
-        # ---------------------------------
-        # COMMIT
-        # ---------------------------------
 
         if isinstance(
             query,
@@ -638,10 +1125,6 @@ class PyDBCLI:
             )
             return
 
-        # ---------------------------------
-        # ROLLBACK
-        # ---------------------------------
-
         if isinstance(
             query,
             RollbackQuery
@@ -650,10 +1133,6 @@ class PyDBCLI:
                 "Transaction rolled back."
             )
             return
-
-        # ---------------------------------
-        # SHOW TABLES
-        # ---------------------------------
 
         if isinstance(
             query,
@@ -664,10 +1143,6 @@ class PyDBCLI:
             )
             return
 
-        # ---------------------------------
-        # DESCRIBE
-        # ---------------------------------
-
         if isinstance(
             query,
             DescribeTableQuery
@@ -676,10 +1151,6 @@ class PyDBCLI:
                 result
             )
             return
-
-        # ---------------------------------
-        # FALLBACK
-        # ---------------------------------
 
         self._display_result(
             result
@@ -804,7 +1275,6 @@ class PyDBCLI:
             limit=query.limit
         )
 
-        # Display the query result first.
         self._display_select_result(
             query,
             result
@@ -907,8 +1377,6 @@ class PyDBCLI:
                     f"{command_name} does not accept arguments"
                 )
 
-            # Do not allow the CLI to silently save an active
-            # transaction.
             if self.database._snapshot is not None:
                 raise RuntimeError(
                     "Active transaction. "
@@ -992,6 +1460,237 @@ class PyDBCLI:
             return True
 
         # ---------------------------------
+        # HISTORY
+        # ---------------------------------
+
+        if command_name == ".history":
+            if argument:
+                raise ValueError(
+                    ".history does not accept arguments"
+                )
+
+            self._show_history()
+
+            return True
+
+        # ---------------------------------
+        # WHAT-IF
+        # ---------------------------------
+
+        if command_name == ".whatif":
+            if not argument:
+                raise ValueError(
+                    "Usage: .whatif <CREATE INDEX>; <SELECT>"
+                )
+
+            parts = argument.split(
+                ";",
+                maxsplit=1
+            )
+
+            if len(parts) != 2:
+                raise ValueError(
+                    "Usage: .whatif <CREATE INDEX>; <SELECT>"
+                )
+
+            create_index_sql = parts[0].strip()
+            select_sql = parts[1].strip()
+
+            if not create_index_sql:
+                raise ValueError(
+                    "CREATE INDEX query cannot be empty"
+                )
+
+            if not select_sql:
+                raise ValueError(
+                    "SELECT query cannot be empty"
+                )
+
+            self._show_whatif(
+                create_index_sql,
+                select_sql
+            )
+
+            return True
+
+        # ---------------------------------
+        # CHECKOUT
+        # ---------------------------------
+
+        if command_name == ".checkout":
+            if not argument:
+                raise ValueError(
+                    "Usage: .checkout <version>"
+                )
+
+            if len(
+                argument.split()
+            ) != 1:
+                raise ValueError(
+                    "Usage: .checkout <version>"
+                )
+
+            self._checkout_version(
+                argument
+            )
+
+            return True
+
+        # ---------------------------------
+        # COMPARE
+        # ---------------------------------
+
+        if command_name == ".compare":
+            parts = argument.split(
+                maxsplit=2
+            )
+
+            if len(parts) != 3:
+                raise ValueError(
+                    "Usage: .compare <version1> <version2> <SELECT>"
+                )
+
+            self._show_compare(
+                parts[0],
+                parts[1],
+                parts[2]
+            )
+
+            return True
+
+        # ---------------------------------
+        # REPLAY
+        # ---------------------------------
+
+        if command_name == ".replay":
+            if not argument:
+                raise ValueError(
+                    "Usage: .replay <version>"
+                )
+
+            if len(
+                argument.split()
+            ) != 1:
+                raise ValueError(
+                    "Usage: .replay <version>"
+                )
+
+            self._replay_version(
+                argument
+            )
+
+            return True
+
+        # ---------------------------------
+        # BRANCHES
+        # ---------------------------------
+
+        if command_name == ".branches":
+            if argument:
+                raise ValueError(
+                    ".branches does not accept arguments"
+                )
+
+            self._show_branches()
+
+            return True
+
+        # ---------------------------------
+        # CREATE BRANCH
+        # ---------------------------------
+
+        if command_name == ".create_branch":
+            if not argument:
+                raise ValueError(
+                    "Usage: .create_branch <name>"
+                )
+
+            if len(
+                argument.split()
+            ) != 1:
+                raise ValueError(
+                    "Usage: .create_branch <name>"
+                )
+
+            self._create_branch(
+                argument
+            )
+
+            return True
+
+        # ---------------------------------
+        # USE BRANCH
+        # ---------------------------------
+
+        if command_name == ".use":
+            if not argument:
+                raise ValueError(
+                    "Usage: .use <branch>"
+                )
+
+            if len(
+                argument.split()
+            ) != 1:
+                raise ValueError(
+                    "Usage: .use <branch>"
+                )
+
+            self._use_branch(
+                argument
+            )
+
+            return True
+
+        # ---------------------------------
+        # MERGE
+        # ---------------------------------
+
+        if command_name == ".merge":
+            if not argument:
+                raise ValueError(
+                    "Usage: .merge <branch>"
+                )
+
+            if len(
+                argument.split()
+            ) != 1:
+                raise ValueError(
+                    "Usage: .merge <branch>"
+                )
+
+            self._show_merge(
+                argument
+            )
+
+            return True
+
+        # ---------------------------------
+        # DIFF
+        # ---------------------------------
+
+        if command_name == ".diff":
+            if not argument:
+                raise ValueError(
+                    "Usage: .diff <version1> <version2>"
+                )
+
+            diff_arguments = argument.split()
+
+            if len(
+                diff_arguments
+            ) != 2:
+                raise ValueError(
+                    "Usage: .diff <version1> <version2>"
+                )
+
+            self._show_diff(
+                diff_arguments[0],
+                diff_arguments[1]
+            )
+
+            return True
+
+        # ---------------------------------
         # EXPLAIN
         # ---------------------------------
 
@@ -1031,20 +1730,36 @@ class PyDBCLI:
 
     def _execute_sql(self, sql):
         """
-        Execute a complete SQL statement through the existing
-        Parser and QueryExecutor.
+        Execute a complete SQL statement through Database.execute().
 
-        The parsed Query Object is retained so that:
+        Database.execute() is intentionally used instead of calling
+        QueryExecutor directly because Database.execute() owns the
+        V2 versioning and transaction lifecycle.
 
-            - SELECT can be formatted correctly
-            - write operations can receive CLI feedback
+        The parsed Query Object is retained so the CLI can present
+        SELECT results and write-operation feedback correctly.
         """
         query = self.database.parser.parse(
             sql
         )
 
-        result = self.database.executor.execute(
-            query
+        # IMPORTANT:
+        #
+        # Always execute through Database.execute().
+        #
+        # This ensures:
+        #
+        #     normal mutation
+        #         -> new history version
+        #
+        #     transaction mutation
+        #         -> version deferred until COMMIT
+        #
+        #     BEGIN / COMMIT / ROLLBACK
+        #         -> correct transaction handling
+        #
+        result = self.database.execute(
+            sql
         )
 
         if isinstance(
@@ -1107,7 +1822,6 @@ class PyDBCLI:
         """
         stripped = line.strip()
 
-        # Ignore empty input when no SQL is being accumulated.
         if (
             not stripped
             and not self._sql_buffer
@@ -1151,13 +1865,8 @@ class PyDBCLI:
             self._sql_buffer
         )
 
-        # A semicolon marks the end of a SQL statement.
         if not sql.rstrip().endswith(";"):
             return False
-
-        # ---------------------------------
-        # EXECUTE COMPLETE SQL
-        # ---------------------------------
 
         self._sql_buffer.clear()
 
@@ -1172,6 +1881,294 @@ class PyDBCLI:
             )
 
         return True
+
+    def _show_compare(
+        self,
+        before_version,
+        after_version,
+        sql
+    ):
+        """
+        Compare one SELECT query against two historical versions.
+
+        Historical states are evaluated independently, so the active
+        database state is never changed.
+        """
+        comparison = self.database.compare_versions(
+            before_version,
+            after_version,
+            sql
+        )
+
+        self._print(
+            "QUERY COMPARISON"
+        )
+
+        self._print(
+            "--------------------------------"
+        )
+
+        self._print(
+            "Query:"
+        )
+
+        self._print(
+            comparison["query"]
+        )
+
+        self._print()
+
+        # ---------------------------------
+        # First version
+        # ---------------------------------
+
+        before = comparison["before"]
+
+        self._print(
+            f"Version {comparison['before_version']}"
+        )
+
+        self._print(
+            f"  Access path: "
+            f"{before['stats']['access_path']}"
+        )
+
+        self._print(
+            f"  Rows returned: "
+            f"{len(before['result'])}"
+        )
+
+        self._print(
+            f"  Condition evaluations: "
+            f"{before['stats']['condition_evaluations']}"
+        )
+
+        self._print()
+
+        # ---------------------------------
+        # Second version
+        # ---------------------------------
+
+        after = comparison["after"]
+
+        self._print(
+            f"Version {comparison['after_version']}"
+        )
+
+        self._print(
+            f"  Access path: "
+            f"{after['stats']['access_path']}"
+        )
+
+        self._print(
+            f"  Rows returned: "
+            f"{len(after['result'])}"
+        )
+
+        self._print(
+            f"  Condition evaluations: "
+            f"{after['stats']['condition_evaluations']}"
+        )
+
+        self._print()
+
+        # ---------------------------------
+        # Result comparison
+        # ---------------------------------
+
+        if comparison["result_changed"]:
+            self._print(
+                "Result: DIFFERENT"
+            )
+        else:
+            self._print(
+                "Result: IDENTICAL"
+            )
+
+        # ---------------------------------
+        # Access-path comparison
+        # ---------------------------------
+
+        if comparison["access_path_changed"]:
+            self._print(
+                "Access path: CHANGED"
+            )
+        else:
+            self._print(
+                "Access path: UNCHANGED"
+            )
+
+    def _replay_version(self, version_id):
+        """
+        Replay the SQL stored in a historical version.
+
+        The SQL is executed against the current active database state
+        and branch. A successful replay therefore creates a new normal
+        database version.
+        """
+        replay_result = self.database.replay(
+            version_id
+        )
+
+        self._print(
+            f"Replayed version "
+            f"{replay_result['source_version_id']} "
+            f"as version "
+            f"{replay_result['new_version_id']}."
+        )
+
+    def _show_whatif(
+        self,
+        create_index_sql,
+        select_sql
+    ):
+        """
+        Display a what-if planner analysis.
+
+        The underlying Database method operates exclusively on
+        temporary table copies, so the real database is untouched.
+        """
+        analysis = self.database.what_if_index(
+            create_index_sql,
+            select_sql
+        )
+
+        self._print(
+            "WHAT-IF ANALYSIS"
+        )
+
+        self._print(
+            "--------------------------------"
+        )
+
+        self._print(
+            "Query:"
+        )
+
+        self._print(
+            analysis["select_sql"]
+        )
+
+        self._print()
+
+        # ---------------------------------
+        # Hypothetical index
+        # ---------------------------------
+
+        index = analysis["index"]
+
+        self._print(
+            "Hypothetical index:"
+        )
+
+        self._print(
+            f"  Name: {index['name']}"
+        )
+
+        self._print(
+            f"  Type: {index['type']}"
+        )
+
+        self._print(
+            f"  Table: {index['table']}"
+        )
+
+        self._print(
+            f"  Column: {index['column']}"
+        )
+
+        self._print()
+
+        # ---------------------------------
+        # Existing plan
+        # ---------------------------------
+
+        without_index = (
+            analysis["without_index"]
+        )
+
+        self._print(
+            "WITHOUT INDEX"
+        )
+
+        self._print(
+            f"  Access path: "
+            f"{without_index['stats']['access_path']}"
+        )
+
+        self._print(
+            f"  Rows returned: "
+            f"{len(without_index['result'])}"
+        )
+
+        self._print(
+            f"  Condition evaluations: "
+            f"{without_index['stats']['condition_evaluations']}"
+        )
+
+        self._print()
+
+        # ---------------------------------
+        # Hypothetical plan
+        # ---------------------------------
+
+        with_index = (
+            analysis["with_index"]
+        )
+
+        self._print(
+            "WITH HYPOTHETICAL INDEX"
+        )
+
+        self._print(
+            f"  Access path: "
+            f"{with_index['stats']['access_path']}"
+        )
+
+        self._print(
+            f"  Rows returned: "
+            f"{len(with_index['result'])}"
+        )
+
+        self._print(
+            f"  Condition evaluations: "
+            f"{with_index['stats']['condition_evaluations']}"
+        )
+
+        self._print()
+
+        # ---------------------------------
+        # Comparison
+        # ---------------------------------
+
+        self._print(
+            "Result changed: "
+            + (
+                "YES"
+                if analysis["result_changed"]
+                else "NO"
+            )
+        )
+
+        self._print(
+            "Access path changed: "
+            + (
+                "YES"
+                if analysis["access_path_changed"]
+                else "NO"
+            )
+        )
+
+        self._print(
+            "Condition evaluations changed: "
+            + (
+                "YES"
+                if analysis[
+                    "condition_evaluations_changed"
+                ]
+                else "NO"
+            )
+        )
 
     # ------------------------------------------------------------------
     # MAIN LOOP
@@ -1189,7 +2186,7 @@ class PyDBCLI:
             - KeyboardInterrupt
         """
         self._print(
-            "PyDB v1.0"
+            "PyDB v2.0"
         )
 
         self._print(
@@ -1212,7 +2209,6 @@ class PyDBCLI:
             except EOFError:
                 self._print()
 
-                # EOF behaves like a normal clean exit.
                 if self.database._snapshot is not None:
                     self._print(
                         "ERROR: Active transaction. "
@@ -1226,8 +2222,6 @@ class PyDBCLI:
             except KeyboardInterrupt:
                 self._print()
 
-                # Cancel unfinished SQL input without shutting
-                # down the whole database shell.
                 if self._sql_buffer:
                     self._sql_buffer.clear()
 

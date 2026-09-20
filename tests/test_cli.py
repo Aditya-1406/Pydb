@@ -71,7 +71,7 @@ def test_cli_starts_and_exits(tmp_path):
 
     assert cli.running is False
 
-    assert "PyDB v1.0" in output.messages
+    assert "PyDB v2.0" in output.messages
 
 
 def test_help_command(tmp_path):

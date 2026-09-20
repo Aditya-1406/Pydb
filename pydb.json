@@ -1,3 +1,628 @@
 {
-    "tables": {}
+    "tables": {
+        "users": {
+            "name": "users",
+            "columns": [
+                {
+                    "name": "id",
+                    "data_type": "INT",
+                    "nullable": true,
+                    "unique": false,
+                    "default": null,
+                    "has_default": false
+                },
+                {
+                    "name": "name",
+                    "data_type": "TEXT",
+                    "nullable": true,
+                    "unique": false,
+                    "default": null,
+                    "has_default": false
+                },
+                {
+                    "name": "age",
+                    "data_type": "INT",
+                    "nullable": true,
+                    "unique": false,
+                    "default": null,
+                    "has_default": false
+                },
+                {
+                    "name": "salary",
+                    "data_type": "FLOAT",
+                    "nullable": true,
+                    "unique": false,
+                    "default": null,
+                    "has_default": false
+                }
+            ],
+            "primary_key": "id",
+            "rows": [
+                [
+                    1,
+                    "Aditya",
+                    22,
+                    90000
+                ],
+                [
+                    2,
+                    "Rahul",
+                    24,
+                    60000
+                ],
+                [
+                    3,
+                    "Neha",
+                    21,
+                    80000
+                ]
+            ],
+            "record_ids": [
+                1,
+                2,
+                3
+            ],
+            "next_record_id": 4,
+            "indexes": [],
+            "bplus_indexes": [
+                "salary"
+            ],
+            "index_definitions": {
+                "salary_idx": {
+                    "type": "BTREE",
+                    "column": "salary"
+                }
+            }
+        }
+    },
+    "history": {
+        "current_version_id": 7,
+        "versions": [
+            {
+                "version_id": 0,
+                "parent_version_id": null,
+                "branch_name": "main",
+                "operation": "INITIAL",
+                "timestamp": "2026-09-20T17:14:49.980834+00:00",
+                "state": {
+                    "tables": {}
+                }
+            },
+            {
+                "version_id": 1,
+                "parent_version_id": 0,
+                "branch_name": "main",
+                "operation": "CREATE TABLE users",
+                "timestamp": "2026-09-20T17:15:41.659276+00:00",
+                "state": {
+                    "tables": {
+                        "users": {
+                            "name": "users",
+                            "columns": [
+                                {
+                                    "name": "id",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "name",
+                                    "data_type": "TEXT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "age",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "salary",
+                                    "data_type": "FLOAT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                }
+                            ],
+                            "primary_key": "id",
+                            "rows": [],
+                            "record_ids": [],
+                            "next_record_id": 1,
+                            "indexes": [],
+                            "bplus_indexes": [],
+                            "index_definitions": {}
+                        }
+                    }
+                },
+                "sql": "CREATE TABLE users (id INT PRIMARY KEY, name TEXT, age INT, salary FLOAT);"
+            },
+            {
+                "version_id": 2,
+                "parent_version_id": 1,
+                "branch_name": "main",
+                "operation": "INSERT INTO users",
+                "timestamp": "2026-09-20T17:15:48.418921+00:00",
+                "state": {
+                    "tables": {
+                        "users": {
+                            "name": "users",
+                            "columns": [
+                                {
+                                    "name": "id",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "name",
+                                    "data_type": "TEXT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "age",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "salary",
+                                    "data_type": "FLOAT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                }
+                            ],
+                            "primary_key": "id",
+                            "rows": [
+                                [
+                                    1,
+                                    "Aditya",
+                                    22,
+                                    70000
+                                ]
+                            ],
+                            "record_ids": [
+                                1
+                            ],
+                            "next_record_id": 2,
+                            "indexes": [],
+                            "bplus_indexes": [],
+                            "index_definitions": {}
+                        }
+                    }
+                },
+                "sql": "INSERT INTO users VALUES (1, 'Aditya', 22, 70000);"
+            },
+            {
+                "version_id": 3,
+                "parent_version_id": 2,
+                "branch_name": "main",
+                "operation": "INSERT INTO users",
+                "timestamp": "2026-09-20T17:15:53.516409+00:00",
+                "state": {
+                    "tables": {
+                        "users": {
+                            "name": "users",
+                            "columns": [
+                                {
+                                    "name": "id",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "name",
+                                    "data_type": "TEXT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "age",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "salary",
+                                    "data_type": "FLOAT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                }
+                            ],
+                            "primary_key": "id",
+                            "rows": [
+                                [
+                                    1,
+                                    "Aditya",
+                                    22,
+                                    70000
+                                ],
+                                [
+                                    2,
+                                    "Rahul",
+                                    24,
+                                    60000
+                                ]
+                            ],
+                            "record_ids": [
+                                1,
+                                2
+                            ],
+                            "next_record_id": 3,
+                            "indexes": [],
+                            "bplus_indexes": [],
+                            "index_definitions": {}
+                        }
+                    }
+                },
+                "sql": "INSERT INTO users VALUES (2, 'Rahul', 24, 60000);"
+            },
+            {
+                "version_id": 4,
+                "parent_version_id": 3,
+                "branch_name": "main",
+                "operation": "INSERT INTO users",
+                "timestamp": "2026-09-20T17:15:58.270233+00:00",
+                "state": {
+                    "tables": {
+                        "users": {
+                            "name": "users",
+                            "columns": [
+                                {
+                                    "name": "id",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "name",
+                                    "data_type": "TEXT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "age",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "salary",
+                                    "data_type": "FLOAT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                }
+                            ],
+                            "primary_key": "id",
+                            "rows": [
+                                [
+                                    1,
+                                    "Aditya",
+                                    22,
+                                    70000
+                                ],
+                                [
+                                    2,
+                                    "Rahul",
+                                    24,
+                                    60000
+                                ],
+                                [
+                                    3,
+                                    "Neha",
+                                    21,
+                                    80000
+                                ]
+                            ],
+                            "record_ids": [
+                                1,
+                                2,
+                                3
+                            ],
+                            "next_record_id": 4,
+                            "indexes": [],
+                            "bplus_indexes": [],
+                            "index_definitions": {}
+                        }
+                    }
+                },
+                "sql": "INSERT INTO users VALUES (3, 'Neha', 21, 80000);"
+            },
+            {
+                "version_id": 5,
+                "parent_version_id": 4,
+                "branch_name": "main",
+                "operation": "CREATE BTREE INDEX salary_idx",
+                "timestamp": "2026-09-20T17:16:05.723809+00:00",
+                "state": {
+                    "tables": {
+                        "users": {
+                            "name": "users",
+                            "columns": [
+                                {
+                                    "name": "id",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "name",
+                                    "data_type": "TEXT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "age",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "salary",
+                                    "data_type": "FLOAT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                }
+                            ],
+                            "primary_key": "id",
+                            "rows": [
+                                [
+                                    1,
+                                    "Aditya",
+                                    22,
+                                    70000
+                                ],
+                                [
+                                    2,
+                                    "Rahul",
+                                    24,
+                                    60000
+                                ],
+                                [
+                                    3,
+                                    "Neha",
+                                    21,
+                                    80000
+                                ]
+                            ],
+                            "record_ids": [
+                                1,
+                                2,
+                                3
+                            ],
+                            "next_record_id": 4,
+                            "indexes": [],
+                            "bplus_indexes": [
+                                "salary"
+                            ],
+                            "index_definitions": {
+                                "salary_idx": {
+                                    "type": "BTREE",
+                                    "column": "salary"
+                                }
+                            }
+                        }
+                    }
+                },
+                "sql": "CREATE INDEX salary_idx ON users(salary) USING BTREE;"
+            },
+            {
+                "version_id": 6,
+                "parent_version_id": 5,
+                "branch_name": "experiment",
+                "operation": "UPDATE users",
+                "timestamp": "2026-09-20T17:17:30.319533+00:00",
+                "state": {
+                    "tables": {
+                        "users": {
+                            "name": "users",
+                            "columns": [
+                                {
+                                    "name": "id",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "name",
+                                    "data_type": "TEXT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "age",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "salary",
+                                    "data_type": "FLOAT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                }
+                            ],
+                            "primary_key": "id",
+                            "rows": [
+                                [
+                                    1,
+                                    "Aditya",
+                                    22,
+                                    90000
+                                ],
+                                [
+                                    2,
+                                    "Rahul",
+                                    24,
+                                    60000
+                                ],
+                                [
+                                    3,
+                                    "Neha",
+                                    21,
+                                    80000
+                                ]
+                            ],
+                            "record_ids": [
+                                1,
+                                2,
+                                3
+                            ],
+                            "next_record_id": 4,
+                            "indexes": [],
+                            "bplus_indexes": [
+                                "salary"
+                            ],
+                            "index_definitions": {
+                                "salary_idx": {
+                                    "type": "BTREE",
+                                    "column": "salary"
+                                }
+                            }
+                        }
+                    }
+                },
+                "sql": "UPDATE users SET salary = 90000 WHERE id = 1;"
+            },
+            {
+                "version_id": 7,
+                "parent_version_id": 5,
+                "branch_name": "main",
+                "operation": "MERGE experiment INTO main",
+                "timestamp": "2026-09-20T17:18:54.271950+00:00",
+                "state": {
+                    "tables": {
+                        "users": {
+                            "name": "users",
+                            "columns": [
+                                {
+                                    "name": "id",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "name",
+                                    "data_type": "TEXT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "age",
+                                    "data_type": "INT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                },
+                                {
+                                    "name": "salary",
+                                    "data_type": "FLOAT",
+                                    "nullable": true,
+                                    "unique": false,
+                                    "default": null,
+                                    "has_default": false
+                                }
+                            ],
+                            "primary_key": "id",
+                            "rows": [
+                                [
+                                    1,
+                                    "Aditya",
+                                    22,
+                                    90000
+                                ],
+                                [
+                                    2,
+                                    "Rahul",
+                                    24,
+                                    60000
+                                ],
+                                [
+                                    3,
+                                    "Neha",
+                                    21,
+                                    80000
+                                ]
+                            ],
+                            "record_ids": [
+                                1,
+                                2,
+                                3
+                            ],
+                            "next_record_id": 4,
+                            "indexes": [],
+                            "bplus_indexes": [
+                                "salary"
+                            ],
+                            "index_definitions": {
+                                "salary_idx": {
+                                    "type": "BTREE",
+                                    "column": "salary"
+                                }
+                            }
+                        }
+                    }
+                },
+                "merge_parent_version_id": 6
+            }
+        ],
+        "branches": {
+            "main": 7,
+            "experiment": 6
+        },
+        "current_branch": "main"
+    }
 }

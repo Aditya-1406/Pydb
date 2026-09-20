@@ -1,0 +1,129 @@
+.help
+
+CREATE TABLE users (id INT, name TEXT, salary INT);
+
+INSERT INTO users VALUES (1, 'Aditya', 50000);
+
+.tables
+.schema users
+.indexes users
+.history
+.branches
+
+.create_branch experiment
+.branches
+
+.use experiment
+
+INSERT INTO users VALUES (2, 'Ravi', 60000);
+
+UPDATE users SET salary = 65000 WHERE id = 2;
+
+SELECT * FROM users;
+
+.history
+
+.use main
+
+INSERT INTO users VALUES (3, 'Neha', 70000);
+
+SELECT * FROM users;
+
+.branches
+
+.diff 2 3
+.diff 2 4
+
+.checkout 2
+
+SELECT * FROM users;
+
+.branches
+
+.use main
+
+SELECT * FROM users;
+
+.compare 2 4 SELECT id, name, salary FROM users WHERE salary > 45000
+
+.whatif CREATE INDEX salary_idx ON users(salary) USING BTREE; SELECT id, name, salary FROM users WHERE salary > 55000
+
+.indexes users
+
+CREATE INDEX salary_idx ON users(salary) USING BTREE;
+
+.indexes users
+
+.explain SELECT * FROM users WHERE salary > 55000
+
+.stats SELECT * FROM users WHERE salary > 55000
+
+.history
+
+.replay 3
+
+SELECT * FROM users;
+
+.history
+
+.merge experiment
+
+SELECT * FROM users;
+
+.branches
+
+.history
+
+.merge experiment
+
+BEGIN;
+
+INSERT INTO users VALUES (10, 'TransactionUser', 90000);
+
+INSERT INTO users VALUES (11, 'TransactionUser2', 95000);
+
+.history
+
+COMMIT;
+
+.history
+
+SELECT * FROM users;
+
+BEGIN;
+
+INSERT INTO users VALUES (12, 'RollbackUser', 100000);
+
+SELECT * FROM users;
+
+ROLLBACK;
+
+SELECT * FROM users;
+
+.create_branch conflict
+
+.use conflict
+
+UPDATE users SET name = 'ConflictBranch' WHERE id = 1;
+
+.use main
+
+UPDATE users SET name = 'MainBranch' WHERE id = 1;
+
+.branches
+
+.merge conflict
+
+SELECT * FROM users;
+
+.history
+
+.branches
+
+.use conflict
+
+SELECT * FROM users;
+
+.use main
+
+.exit

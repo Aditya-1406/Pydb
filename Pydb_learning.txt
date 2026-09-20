@@ -1,0 +1,2269 @@
+PyDB — Complete Learning Text
+
+This is the complete learning material behind the PyDB project we built, from the database basics all the way to PyDB V2 — Time Machine.
+
+The goal is not merely to remember PyDB's code. The goal is to understand why every part exists, how the pieces interact, and what real database/system concepts you learned by implementing them.
+
+1. What is PyDB?
+
+PyDB is a small SQL-like relational database engine written in Python.
+
+At V1, the goal was:
+
+Understand how a database works internally.
+
+At V2, the goal became:
+
+Understand how a database evolves over time.
+
+The resulting architecture is:
+
+                  SQL
+                   ↓
+                 Lexer
+                   ↓
+                 Parser
+                   ↓
+              Query Object
+                   ↓
+             QueryExecutor
+                   ↓
+              Database
+                   ↓
+                Table
+             ↙         ↘
+        Indexes        Storage
+       /       \
+    Hash      B+Tree
+
+
+V2 adds a historical layer:
+
+                    Database State
+                          ↓
+                   HistoryManager
+                          ↓
+                    Version Graph
+                   ↙       ↓       ↘
+             Checkout    Branch    Diff
+                   ↘       ↓       ↙
+                Replay / Compare
+                       What-if
+                         Merge
+
+The important lesson is that a database engine is layered.
+
+A SQL string should not directly manipulate rows.
+
+Each layer has a responsibility.
+
+2. Database fundamentals
+
+A relational database stores data in tables.
+
+A table consists of:
+
+Table
+├── schema
+├── rows
+├── constraints
+└── indexes
+
+For example:
+
+CREATE TABLE users (
+    id INT,
+    name TEXT,
+    salary INT
+);
+
+Conceptually:
+
+users
++----+--------+--------+
+| id | name   | salary |
++----+--------+--------+
+| 1  | Aditya | 50000  |
+| 2  | Ravi   | 60000  |
++----+--------+--------+
+
+The schema describes what each row is allowed to contain.
+
+3. Why PyDB has a lexer
+
+A computer cannot directly understand:
+
+SELECT name FROM users WHERE salary > 50000;
+
+as a structured database operation.
+
+The first step is lexical analysis.
+
+The lexer converts characters into tokens.
+
+For example:
+
+SELECT name FROM users WHERE salary > 50000;
+
+becomes approximately:
+
+SELECT
+IDENTIFIER(name)
+FROM
+IDENTIFIER(users)
+WHERE
+IDENTIFIER(salary)
+GREATER_THAN
+NUMBER(50000)
+SEMICOLON
+
+The lexer answers:
+
+"What are these pieces?"
+
+It does not answer:
+
+"What does this query mean?"
+
+That is the parser's responsibility.
+
+4. Why PyDB has a parser
+
+The parser takes tokens and builds a structured representation.
+
+For example:
+
+SELECT name
+FROM users
+WHERE salary > 50000;
+
+becomes conceptually:
+
+SelectQuery
+├── table_name = users
+├── columns = [name]
+├── condition
+│   ├── column = salary
+│   ├── operator = >
+│   └── value = 50000
+└── ...
+
+This is called an Abstract Syntax Tree / structured query representation, depending on the exact implementation.
+
+The critical idea is:
+
+SQL text
+   ↓
+tokens
+   ↓
+structured meaning
+
+After parsing, the rest of PyDB does not need to repeatedly interpret raw SQL text.
+
+5. Query objects
+
+PyDB uses different query objects for different SQL operations.
+
+Examples:
+
+SelectQuery
+InsertQuery
+UpdateQuery
+DeleteQuery
+CreateTableQuery
+DropTableQuery
+CreateIndexQuery
+DropIndexQuery
+BeginQuery
+CommitQuery
+RollbackQuery
+
+This is an important software-engineering lesson.
+
+Instead of having one giant function asking:
+
+if sql.startswith("SELECT"):
+    ...
+elif sql.startswith("INSERT"):
+    ...
+
+the parser produces typed objects.
+
+Then the executor can reason about:
+
+isinstance(query, SelectQuery)
+
+This creates separation between syntax and execution.
+
+6. QueryExecutor
+
+The QueryExecutor is responsible for turning parsed queries into actual database operations.
+
+For example:
+
+SelectQuery
+   ↓
+find table
+   ↓
+apply WHERE
+   ↓
+use index if appropriate
+   ↓
+filter rows
+   ↓
+ORDER BY
+   ↓
+LIMIT
+   ↓
+return result
+
+For an INSERT:
+
+InsertQuery
+   ↓
+find table
+   ↓
+validate values
+   ↓
+check constraints
+   ↓
+allocate Record ID
+   ↓
+insert row
+   ↓
+update indexes
+
+This layer is where SQL meaning becomes database behavior.
+
+7. Table
+
+The Table is the core physical data structure of PyDB.
+
+A simplified table contains:
+
+Table
+├── name
+├── columns
+├── primary_key
+├── rows
+├── record_ids
+├── next_record_id
+├── indexes
+└── bplus_indexes
+
+One particularly important decision was introducing:
+
+record_ids
+
+These are internal database identities.
+
+For example:
+
+record_id = 7
+row = [25, "Aditya", 50000]
+
+The user only sees:
+
+25 | Aditya | 50000
+
+They do not see the internal Record ID.
+
+This distinction becomes extremely important in V2 merging.
+
+8. Internal Record ID vs primary key
+
+These are not the same concept.
+
+Suppose:
+
+CREATE TABLE users (
+    id INT PRIMARY KEY,
+    name TEXT
+);
+
+Then:
+
+id
+
+is a logical database key.
+
+But PyDB may internally represent the row as:
+
+Record ID 17
+row = [42, "Aditya"]
+
+So:
+
+internal identity = 17
+logical identity  = id = 42
+
+This distinction taught us an important systems principle:
+
+A physical storage identity and a logical business identity are different things.
+
+This became essential during merge implementation.
+
+9. Data types
+
+PyDB supports:
+
+INT
+TEXT
+FLOAT
+BOOL
+NULL
+
+Examples:
+
+INSERT INTO users VALUES (
+    1,
+    'Aditya',
+    50000
+);
+
+and:
+
+INSERT INTO users VALUES (
+    2,
+    NULL,
+    60000
+);
+
+The database has to distinguish:
+
+NULL
+
+from:
+
+0
+
+and:
+
+''
+
+NULL means:
+
+The value is absent/unknown, not equal to zero or an empty string.
+
+10. Constraints
+
+PyDB supports database constraints such as:
+
+PRIMARY KEY
+UNIQUE
+NOT NULL
+DEFAULT
+
+A database must enforce constraints inside the data layer, not merely in the CLI.
+
+For example:
+
+CREATE TABLE users (
+    id INT PRIMARY KEY,
+    name TEXT
+);
+
+Then:
+
+INSERT INTO users VALUES (1, 'Aditya');
+
+is valid.
+
+But:
+
+INSERT INTO users VALUES (1, 'Ravi');
+
+must fail.
+
+The reason is simple:
+
+Database correctness cannot depend on the application remembering the rules.
+
+11. INSERT
+
+An INSERT follows this general path:
+
+SQL
+ ↓
+Lexer
+ ↓
+Parser
+ ↓
+InsertQuery
+ ↓
+QueryExecutor
+ ↓
+Table.insert()
+ ↓
+validation
+ ↓
+Record ID allocation
+ ↓
+row storage
+ ↓
+index maintenance
+
+PyDB also supports column-list INSERTs:
+
+INSERT INTO users (name, salary)
+VALUES ('Aditya', 50000);
+
+The executor has to determine which columns were omitted and then apply:
+
+DEFAULT
+NULL
+constraint rules
+
+appropriately.
+
+This is a real database concern.
+
+12. UPDATE
+
+An UPDATE is more complicated than an INSERT.
+
+For:
+
+UPDATE users
+SET salary = 75000
+WHERE id = 1;
+
+the engine must:
+
+find matching rows
+        ↓
+calculate new values
+        ↓
+validate new values
+        ↓
+check constraints
+        ↓
+update indexes
+        ↓
+store new row
+
+If an indexed column changes, the index must also change.
+
+For example:
+
+old:
+salary = 50000
+
+new:
+salary = 75000
+
+The index must remove the old mapping and add the new mapping.
+
+13. DELETE
+
+DELETE follows a similar pattern:
+
+find rows
+   ↓
+remove rows
+   ↓
+remove index entries
+   ↓
+preserve historical state if versioning is enabled
+
+This is why indexes must remain synchronized with table mutations.
+
+14. WHERE conditions
+
+PyDB supports comparison operations:
+
+=
+!=
+<
+>
+<=
+>=
+
+For example:
+
+SELECT *
+FROM users
+WHERE salary > 50000;
+
+The executor evaluates a condition against each candidate row.
+
+15. Logical operators
+
+PyDB supports:
+
+AND
+OR
+
+For example:
+
+SELECT *
+FROM users
+WHERE salary > 50000
+AND id > 1;
+
+Conceptually:
+
+           AND
+          /   \
+ salary > 50000   id > 1
+
+The parser has to preserve logical structure so evaluation happens correctly.
+
+16. BETWEEN
+WHERE salary BETWEEN 50000 AND 80000
+
+represents a bounded comparison.
+
+Conceptually:
+
+50000 <= salary <= 80000
+17. IN
+WHERE id IN (1, 3, 5)
+
+means:
+
+id == 1
+OR id == 3
+OR id == 5
+
+But implementing it efficiently can require different execution strategies than simple equality.
+
+18. LIKE
+
+Example:
+
+WHERE name LIKE 'Adi%'
+
+This introduces pattern matching.
+
+A database engine therefore doesn't only deal with exact comparisons; it also handles more expressive predicates.
+
+19. ORDER BY and LIMIT
+
+Example:
+
+SELECT *
+FROM users
+ORDER BY salary DESC
+LIMIT 10;
+
+The execution pipeline becomes:
+
+FROM
+ ↓
+WHERE
+ ↓
+ORDER BY
+ ↓
+LIMIT
+ ↓
+projection
+
+Understanding the sequence of operations is important when building query engines.
+
+20. GROUP BY and aggregation
+
+PyDB supports:
+
+COUNT
+SUM
+AVG
+MIN
+MAX
+
+Example:
+
+SELECT department, COUNT(*)
+FROM employees
+GROUP BY department;
+
+Aggregation changes the nature of the query.
+
+Instead of simply returning individual rows, the engine creates groups and computes values for each group.
+
+This introduced the concept of relational aggregation.
+
+21. HAVING
+
+WHERE filters rows.
+
+HAVING filters groups.
+
+For example:
+
+SELECT department, COUNT(*)
+FROM employees
+GROUP BY department
+HAVING COUNT(*) > 5;
+
+The conceptual distinction is:
+
+WHERE
+→ before grouping
+
+HAVING
+→ after grouping
+
+This is an important SQL concept.
+
+22. Persistence
+
+A database becomes useful only when data survives the process ending.
+
+PyDB persists state in JSON.
+
+Conceptually:
+
+Table
+ ↓
+to_dict()
+ ↓
+JSON
+ ↓
+StorageEngine
+ ↓
+disk
+
+On startup:
+
+disk
+ ↓
+JSON
+ ↓
+Table.from_dict()
+ ↓
+live database
+
+Persistence teaches a major systems lesson:
+
+In-memory objects are not the database; durable state is.
+
+23. Hash indexes
+
+Without an index:
+
+SELECT *
+FROM users
+WHERE id = 100;
+
+the engine may need:
+
+row 1
+row 2
+row 3
+...
+row 100000
+
+This is a full scan.
+
+A hash index can store:
+
+value -> record IDs
+
+For example:
+
+1 -> {7}
+2 -> {13}
+3 -> {18}
+
+Then:
+
+WHERE id = 3
+
+can directly find:
+
+{18}
+
+instead of scanning every row.
+
+24. Why hash indexes are good for equality
+
+Hash indexes naturally support:
+
+=
+
+efficiently.
+
+But they are not naturally ordered.
+
+So they are not ideal for:
+
+WHERE salary > 50000
+
+because the engine needs an ordered range.
+
+This led to the second index type.
+
+25. B+Tree
+
+A B+Tree keeps keys ordered.
+
+Conceptually:
+
+10
+20
+30
+40
+50
+60
+70
+
+Because values are ordered, a query like:
+
+WHERE salary > 50000
+
+can efficiently locate the starting point and scan the relevant range.
+
+Therefore:
+
+Hash
+→ equality
+
+B+Tree
+→ equality + ranges
+
+PyDB exposes this through a BPlusTreeIndex wrapper.
+
+26. Query planner
+
+PyDB doesn't blindly use an index.
+
+It decides an access path.
+
+Examples:
+
+HASH_INDEX
+BTREE_INDEX
+BTREE_RANGE
+FULL_SCAN
+
+For:
+
+WHERE salary > 50000
+
+with a B+Tree:
+
+BTREE_RANGE
+
+Without an appropriate index:
+
+FULL_SCAN
+
+This introduces a fundamental database concept:
+
+Query execution is a planning problem.
+
+27. EXPLAIN
+
+PyDB supports:
+
+.explain SELECT ...
+
+This reveals the chosen access path.
+
+For example:
+
+access_path = BTREE_RANGE
+column = salary
+operator = >
+reason = B+Tree supports ordered range lookup
+
+This is analogous to a simplified database query planner/explain facility.
+
+28. Execution statistics
+
+PyDB also supports:
+
+.stats SELECT ...
+
+It reports things such as:
+
+table_rows
+table_rows_visited
+index_candidates
+condition_evaluations
+rows_matched
+access_path
+
+This teaches an important performance principle:
+
+You don't understand an optimizer merely by knowing which path it chooses; you need measurements.
+
+29. Transactions
+
+PyDB supports:
+
+BEGIN;
+...
+COMMIT;
+
+and:
+
+BEGIN;
+...
+ROLLBACK;
+
+A transaction creates a snapshot of the current state.
+
+Conceptually:
+
+before transaction
+       ↓
+     BEGIN
+       ↓
+ snapshot
+       ↓
+ mutations
+       ↓
+ COMMIT / ROLLBACK
+30. Transaction rollback
+
+Suppose:
+
+BEGIN;
+
+INSERT INTO users VALUES (10, 'Test');
+
+ROLLBACK;
+
+The new row disappears.
+
+The important concept is that the database restores the earlier state.
+
+31. Transaction commit
+
+PyDB intentionally groups transaction mutations.
+
+Instead of:
+
+INSERT
+→ version
+
+INSERT
+→ version
+
+INSERT
+→ version
+
+inside one transaction, COMMIT creates:
+
+TRANSACTION COMMIT
+
+as one historical version.
+
+This gives history a higher-level semantic meaning:
+
+One transaction = one historical event.
+
+32. Version history
+
+V1 only knew about the current state.
+
+V2 adds:
+
+Version
+├── version_id
+├── parent_version_id
+├── branch_name
+├── operation
+├── timestamp
+├── state
+├── sql
+└── merge_parent_version_id
+
+This means PyDB now remembers:
+
+what happened
+when it happened
+where it happened
+what state resulted
+and, for merges, which two histories were combined
+33. Version 0
+
+Every fresh database starts with:
+
+Version 0
+INITIAL
+
+This is the root of the history.
+
+Then:
+
+V0
+ ↓
+V1
+ ↓
+V2
+ ↓
+V3
+
+Initially, this is basically a tree with one active line.
+
+34. Immutable historical snapshots
+
+One of the most important V2 lessons came from a real bug.
+
+A version must not store references to mutable live objects.
+
+Bad concept:
+
+history version
+      ↓
+same rows object
+      ↑
+live table
+
+If the live table changes, the old version changes too.
+
+That destroys the meaning of history.
+
+The correct idea is:
+
+live state
+   ↓
+deep copy
+   ↓
+historical snapshot
+
+Then:
+
+live state can change
+
+historical state remains fixed
+
+This is the concept of snapshot immutability.
+
+35. .history
+
+The CLI exposes:
+
+.history
+
+It shows something like:
+
+version | parent | branch | operation
+
+This gives the user a human-readable timeline.
+
+36. .checkout
+
+The command:
+
+.checkout 2
+
+restores the database to version 2.
+
+Importantly:
+
+checkout ≠ new version
+
+It changes the current historical position.
+
+It does not rewrite history.
+
+37. Branches
+
+V2 introduces:
+
+main
+experiment
+
+A branch is essentially a named pointer to a version in the history graph.
+
+Conceptually:
+
+V0
+ |
+ V1
+ |
+ V2
+/ \
+main experiment
+
+At first both branches can point to the same version.
+
+38. Branch switching
+.use experiment
+
+means:
+
+change active branch
++
+restore its head state
+
+Branch switching is not a new version.
+
+It selects a different historical line.
+
+39. Divergence
+
+Suppose:
+
+V2
+├── main
+└── experiment
+
+Then:
+
+main:
+V2 → V3 → V4
+
+experiment:
+V2 → V5 → V6
+
+Now the histories have diverged.
+
+This is the foundation required for merge.
+
+40. .diff
+
+PyDB supports:
+
+.diff 5 8
+
+It compares historical database states.
+
+Rather than showing raw JSON differences, it reports logical changes:
+
+tables added
+tables removed
+schema changes
+index changes
+rows added
+rows removed
+rows updated
+
+This is much more useful than a raw serialization diff.
+
+41. Common ancestor
+
+When two branches diverge:
+
+        V3
+       /  \
+     main experiment
+
+the merge needs to know:
+
+What was the state before they diverged?
+
+That is the common ancestor.
+
+For example:
+
+V2
+├── main → V3
+└── experiment → V4
+
+then:
+
+common ancestor = V2
+42. Why V2 history became a DAG
+
+Before merges, history looks like a tree.
+
+After a merge, one version has two parents:
+
+        V5 MERGE
+       /        \
+     V3          V4
+      \          /
+        V2
+
+This is no longer a simple tree.
+
+It is a:
+
+Directed Acyclic Graph (DAG)
+
+A merge commit contains:
+
+parent_version_id
+merge_parent_version_id
+
+That is one of the most important architectural changes in V2.
+
+43. DAG traversal
+
+PyDB's ancestry logic has to follow:
+
+parent_version_id
+
+and:
+
+merge_parent_version_id
+
+Otherwise the system would only understand the target side of a merge.
+
+The _get_ancestor_distances() method therefore explores both parent directions.
+
+Conceptually:
+
+version
+ ├── parent A
+ │    ├── ...
+ │
+ └── parent B
+      ├── ...
+44. Three-way merge
+
+This is the heart of V2.
+
+A three-way merge compares:
+
+BASE
+TARGET
+SOURCE
+
+Suppose:
+
+BASE       = A
+TARGET     = B
+SOURCE     = A
+
+Only target changed.
+
+Result:
+
+B
+
+Suppose:
+
+BASE       = A
+TARGET     = A
+SOURCE     = C
+
+Only source changed.
+
+Result:
+
+C
+
+Suppose:
+
+BASE       = A
+TARGET     = B
+SOURCE     = B
+
+Both changed in the same way.
+
+Result:
+
+B
+
+But:
+
+BASE       = A
+TARGET     = B
+SOURCE     = C
+
+means:
+
+both changed differently
+
+Therefore:
+
+CONFLICT
+
+This is the classic three-way merge model.
+
+45. Shared-row conflicts
+
+Suppose:
+
+Base:
+[1, "Aditya"]
+
+main:
+[1, "Main"]
+
+experiment:
+[1, "Experiment"]
+
+The Record ID existed in the common ancestor.
+
+Therefore all three rows refer to the same logical historical row.
+
+The correct result is:
+
+CONFLICT
+
+This is fundamentally different from two independent inserts.
+
+46. Branch-local Record IDs
+
+This was one of the trickiest parts.
+
+Suppose the branches split before either branch inserts a row.
+
+Both can produce:
+
+main:
+internal Record ID 1 → [1, "Main"]
+
+experiment:
+internal Record ID 1 → [2, "Experiment"]
+
+The numeric Record ID 1 does not prove these are the same logical row.
+
+Why?
+
+Because the ID was created independently after the fork.
+
+Therefore:
+
+shared ancestor ID
+→ shared identity
+
+new branch-local ID
+→ local identity
+
+This is a very important storage/merge concept.
+
+47. Record-ID collision handling
+
+Suppose:
+
+main:
+internal ID 2 → [3, "Neha"]
+
+experiment:
+internal ID 2 → [2, "Ravi"]
+
+They were independently created.
+
+Both need to survive.
+
+PyDB's deterministic policy is:
+
+source keeps original ID
+target gets remapped
+
+So the merged internal state becomes conceptually:
+
+ID 1 → Base
+ID 2 → Ravi
+ID 3 → Neha
+
+The exact internal IDs are an implementation detail; the important rule is that neither logical row is lost.
+
+48. Primary-key collision
+
+Record-ID remapping does not solve logical conflicts.
+
+For example:
+
+main:
+id = 10, name = Main
+
+experiment:
+id = 10, name = Experiment
+
+Even if their internal Record IDs differ, both rows cannot coexist if:
+
+id
+
+is a primary key.
+
+Therefore the merge must detect:
+
+constraint_conflict
+
+This teaches a crucial distinction:
+
+storage identity
+≠
+logical constraint
+49. Delete-vs-update conflict
+
+Suppose:
+
+Base:
+ID 1 → Aditya
+
+main:
+ID 1 deleted
+
+experiment:
+ID 1 → Experiment
+
+One branch deleted the row.
+
+The other changed it.
+
+This is ambiguous.
+
+Therefore:
+
+CONFLICT
+
+The system cannot safely choose without a merge policy.
+
+50. Table conflicts
+
+Merging isn't only about rows.
+
+Suppose both branches independently create:
+
+users(id INT)
+
+and:
+
+users(name TEXT)
+
+The same table name has incompatible schemas.
+
+Result:
+
+table_add_conflict
+51. Schema conflicts
+
+Suppose one branch changes:
+
+salary INT
+
+to:
+
+salary FLOAT
+
+and the other branch changes it differently.
+
+Then:
+
+schema_conflict
+
+is necessary.
+
+Schema is part of database state, so it must be merged just like rows.
+
+52. Index conflicts
+
+Suppose:
+
+main:
+salary_idx = HASH
+
+experiment:
+salary_idx = BTREE
+
+Same name, different definition.
+
+That becomes:
+
+index_conflict
+
+If both branches independently create exactly the same index definition, they agree and the merge can proceed.
+
+53. Merge atomicity
+
+One of the strongest properties we tested is:
+
+A failed merge must not partially modify the database.
+
+Before merge:
+
+tables       unchanged
+history      unchanged
+branch heads unchanged
+current ver  unchanged
+dirty state  unchanged
+
+If conflict happens, all remain unchanged.
+
+Therefore merge behaves conceptually like:
+
+calculate
+   ↓
+validate
+   ↓
+if failure → discard everything
+   ↓
+if success → apply everything
+
+This is a form of atomic operation design.
+
+54. Successful merge commit
+
+When a merge succeeds, PyDB creates one new version:
+
+MERGE experiment INTO main
+
+Its structure is:
+
+merge_version
+├── parent_version_id = target head
+└── merge_parent_version_id = source head
+
+So:
+
+             MERGE
+            /     \
+       target     source
+
+Both histories are preserved.
+
+55. Source branch preservation
+
+A successful merge does not move the source branch head.
+
+Suppose:
+
+main       → V7
+experiment → V5
+
+After merge:
+
+main       → V8 (merge)
+experiment → V5
+
+This is important because the source branch remains an independent history.
+
+56. Merge idempotency
+
+After successfully merging:
+
+experiment → main
+
+running:
+
+.merge experiment
+
+again should not create another merge commit when there is no new source work.
+
+Instead:
+
+UP_TO_DATE
+
+This makes the merge operation safe to repeat.
+
+57. Source branch can continue after merge
+
+After:
+
+main ← experiment
+
+the experiment branch can still continue:
+
+experiment:
+V5 → V9
+
+Then a later merge can happen:
+
+main:
+V8 → V10
+
+experiment:
+V5 → V9
+
+V10 ← V9
+   merge
+
+This demonstrates that branches aren't "closed" after merge.
+
+58. .replay
+
+PyDB stores original SQL with mutation versions.
+
+Example:
+
+Version 3
+SQL:
+INSERT INTO users VALUES (3, 'Neha', 70000);
+
+Then:
+
+.replay 3
+
+executes that SQL against the current database.
+
+Therefore replay creates a new version.
+
+This is not time travel restoration.
+
+It is:
+
+Re-execution of a historical operation.
+
+59. Replay vs checkout
+
+These are completely different.
+
+.checkout 3
+
+means:
+
+Restore historical state 3.
+
+Whereas:
+
+.replay 3
+
+means:
+
+Execute the operation recorded at version 3 against the current state.
+
+For example:
+
+Current:
+A B
+
+Old operation:
+INSERT C
+
+Replay gives:
+
+A B C
+
+Checkout gives the exact historical snapshot.
+
+60. Why replay can create duplicates
+
+Suppose version 3 contains:
+
+INSERT INTO users VALUES (3, 'Neha', 70000);
+
+and current state already contains that row.
+
+Replay executes:
+
+INSERT ...
+
+again.
+
+Therefore a duplicate row can appear if the database schema permits it.
+
+This is intentional.
+
+Replay is operation replay, not deduplication.
+
+61. .compare
+
+PyDB versions mutations, not SELECT statements.
+
+So this syntax was designed:
+
+.compare <version1> <version2> <SELECT>
+
+Example:
+
+.compare 2 7 SELECT id, salary FROM users WHERE salary > 50000
+
+The same SELECT is evaluated independently against two historical states.
+
+The system can then report:
+
+result changed
+access path changed
+condition evaluations changed
+rows returned
+
+This introduces the idea of historical query analysis.
+
+62. Why historical query comparison matters
+
+Suppose version 2 has:
+
+no index
+
+and version 7 has:
+
+B+Tree index
+
+The query may produce exactly the same logical rows.
+
+But:
+
+execution strategy
+
+may be very different.
+
+For example:
+
+Version 2 → FULL_SCAN
+Version 7 → BTREE_RANGE
+
+That means database evolution changed not only data but potentially performance characteristics.
+
+63. .whatif
+
+PyDB also supports:
+
+.whatif CREATE INDEX salary_idx ON users(salary) USING BTREE; SELECT ...
+
+This asks:
+
+What would happen if this index existed?
+
+The real database is not modified.
+
+PyDB builds temporary table copies:
+
+real table
+   ├── current copy
+   └── hypothetical copy
+                    ↓
+             create index
+                    ↓
+            execute same query
+
+Then it compares:
+
+access path
+rows returned
+condition evaluations
+64. Why What-if is interesting
+
+Traditional database experimentation often involves changing configuration or schema and then testing again.
+
+PyDB gives the concept:
+
+simulate first
+apply later
+
+This introduces a simplified form of hypothetical query planning.
+
+65. Persistence of the version graph
+
+V2 doesn't only persist tables.
+
+It persists:
+
+tables
+history
+versions
+branches
+current branch
+merge parent relationships
+
+So after:
+
+save()
+
+and restarting PyDB:
+
+history remains
+branches remain
+merge DAG remains
+branch heads remain
+historical state remains
+
+This is what turns the Time Machine from an in-memory demo into a persistent system feature.
+
+66. CLI architecture
+
+The CLI is intentionally separate from the database engine.
+
+Correct flow:
+
+CLI
+ ↓
+Database.execute()
+ ↓
+Parser
+ ↓
+QueryExecutor
+ ↓
+Table
+ ↓
+History
+
+The CLI contains meta-commands such as:
+
+.history
+.branches
+.create_branch
+.use
+.checkout
+.diff
+.replay
+.compare
+.whatif
+.merge
+
+These are not SQL statements.
+
+They are database-shell commands.
+
+67. Important CLI lesson
+
+We actually discovered a real architectural bug here.
+
+The CLI originally did:
+
+query = parser.parse(sql)
+result = database.executor.execute(query)
+
+That bypassed:
+
+Database.execute()
+
+But version creation lived inside Database.execute().
+
+Therefore CLI SQL mutations did not enter V2 history.
+
+The correct path became:
+
+result = self.database.execute(sql)
+
+This is a valuable software-engineering lesson:
+
+When a layer owns an invariant, callers must go through that layer.
+
+The database layer owns versioning, so the CLI must use the database API.
+
+68. Testing philosophy
+
+PyDB now has a very large regression suite.
+
+The major lesson is:
+
+Every feature needs behavioral tests, not just implementation tests.
+
+We tested:
+
+CRUD
+parser
+lexer
+constraints
+indexes
+planner
+transactions
+persistence
+history
+checkout
+branches
+diff
+replay
+compare
+what-if
+merge
+DAG
+immutability
+atomicity
+CLI
+69. Why regression testing mattered
+
+During merge development, tests exposed:
+
+Record-ID collision
+historical snapshot mutation
+wrong branch identity
+wrong common ancestor
+incorrect conflict detection
+CLI bypassing versioning
+
+These were not obvious from reading the code.
+
+This demonstrates a central engineering principle:
+
+Tests are not just for proving the final result; they are tools for discovering design bugs.
+
+70. History immutability tests
+
+We explicitly tested:
+
+historical version
+      ↓
+live INSERT
+
+and ensured:
+
+historical version unchanged
+
+Similarly:
+
+live UPDATE
+live DELETE
+branch mutation
+
+must not mutate the old snapshot.
+
+These tests protect the fundamental Time Machine invariant.
+
+71. Branch immutability
+
+We also tested that:
+
+main head
+
+doesn't change when:
+
+experiment branch
+
+changes.
+
+Likewise, after a merge:
+
+source branch head
+
+must remain where it was.
+
+This protects the DAG from accidental pointer corruption.
+
+72. DAG persistence
+
+We verified that after restart:
+
+merge version
+
+still has:
+
+parent_version_id
+merge_parent_version_id
+
+and both are still reachable through ancestor traversal.
+
+That means the history graph isn't merely presentation metadata.
+
+It is persisted structural state.
+
+73. The complete V2 data model
+
+Conceptually, PyDB now looks like:
+
+Database
+│
+├── Tables
+│   ├── users
+│   ├── ...
+│
+├── StorageEngine
+│
+├── HistoryManager
+│   ├── versions
+│   ├── branches
+│   ├── current_branch
+│   └── current_version
+│
+├── Parser
+│
+└── QueryExecutor
+
+The HistoryManager contains a graph:
+
+                 V0
+                  |
+                 V1
+                  |
+                 V2
+                /  \
+              V3    V4
+               \    /
+                V5
+74. Normal mutation lifecycle
+
+When you run:
+
+INSERT INTO users VALUES (1, 'Aditya');
+
+the V2 lifecycle is:
+
+SQL
+ ↓
+Lexer
+ ↓
+Parser
+ ↓
+InsertQuery
+ ↓
+QueryExecutor
+ ↓
+Table.insert()
+ ↓
+database state changes
+ ↓
+Database.execute()
+ ↓
+_create_version()
+ ↓
+HistoryManager
+ ↓
+new Version
+
+The version stores:
+
+parent = current version
+operation = INSERT INTO users
+sql = original SQL
+state = immutable snapshot
+branch = active branch
+75. Transaction mutation lifecycle
+
+For:
+
+BEGIN;
+
+INSERT ...;
+
+UPDATE ...;
+
+COMMIT;
+
+the lifecycle is different.
+
+During BEGIN:
+
+snapshot created
+
+During INSERT/UPDATE:
+
+live state changes
+history doesn't create individual versions
+
+During COMMIT:
+
+one TRANSACTION COMMIT version created
+
+This is why the version history represents meaningful transaction boundaries.
+
+76. Merge lifecycle
+
+For:
+
+.merge experiment
+
+the flow is:
+
+get target branch
+        ↓
+get source branch
+        ↓
+get target head
+        ↓
+get source head
+        ↓
+find common ancestor
+        ↓
+load three snapshots
+        ↓
+three-way merge
+        ↓
+detect conflicts
+        ↓
+validate merged state
+        ↓
+restore merged database
+        ↓
+create two-parent version
+
+The merge commit contains:
+
+parent = target head
+merge_parent = source head
+77. Failure lifecycle
+
+If merge encounters:
+
+row conflict
+schema conflict
+index conflict
+table conflict
+constraint conflict
+
+then:
+
+calculate
+  ↓
+detect conflict
+  ↓
+return CONFLICT
+
+and:
+
+no live mutation
+no history mutation
+no branch-head mutation
+
+This is one of the strongest design properties of PyDB V2.
+
+78. What PyDB taught you about databases
+
+The project gave you hands-on understanding of:
+
+storage
+schema
+rows
+constraints
+query processing
+query parsing
+indexes
+hash indexing
+B+Trees
+range queries
+query planning
+transactions
+persistence
+snapshots
+version history
+branching
+DAGs
+three-way merge
+conflict detection
+historical execution
+hypothetical planning
+
+This is much deeper than simply using SQLite/PostgreSQL APIs.
+
+You implemented simplified versions of concepts that real database systems deal with.
+
+79. What PyDB taught you about software architecture
+
+You also learned:
+
+separation of concerns
+object modeling
+serialization
+state restoration
+immutable snapshots
+dependency boundaries
+API ownership
+atomic operations
+regression testing
+failure isolation
+
+One of the most important architectural principles is:
+
+Parser
+≠
+Executor
+≠
+Database
+≠
+Storage
+≠
+CLI
+≠
+History
+
+Each component has a job.
+
+80. What PyDB taught you about distributed/system thinking
+
+Even though PyDB is local and simplified, V2 introduced concepts that resemble problems found in larger systems:
+
+branch divergence
+historical state
+conflict resolution
+immutable snapshots
+DAG traversal
+atomic changes
+state reconciliation
+
+The merge problem is particularly valuable because the underlying question is:
+
+Two independently evolved states must be reconciled with knowledge of their common past.
+
+That is a very general systems problem.
+
+81. What PyDB does NOT yet claim to be
+
+PyDB is a serious educational/systems portfolio project, but it is not a PostgreSQL replacement.
+
+It does not yet provide things such as:
+
+multi-process concurrency
+network server protocol
+durable WAL
+crash recovery
+MVCC
+lock manager
+buffer pool
+page-oriented disk storage
+cost-based optimizer
+parallel query execution
+distributed replication
+distributed consensus
+production-grade SQL compatibility
+
+This distinction matters.
+
+The project demonstrates understanding and implementation of database concepts, not production database completeness.
+
+82. The mental model you should remember
+
+The easiest way to remember the whole project is:
+
+SQL
+ ↓
+UNDERSTAND IT
+Lexer + Parser
+ ↓
+REPRESENT IT
+Query Object
+ ↓
+EXECUTE IT
+QueryExecutor
+ ↓
+STORE IT
+Table + Storage
+ ↓
+OPTIMIZE IT
+Indexes + Planner
+ ↓
+PROTECT IT
+Transactions + Constraints
+ ↓
+REMEMBER IT
+History
+ ↓
+EXPLORE IT
+Checkout + Diff + Replay + Compare
+ ↓
+EXPERIMENT WITH IT
+What-if
+ ↓
+EVOLVE IT
+Branches
+ ↓
+RECONCILE IT
+Three-way Merge
+ ↓
+REMEMBER THE GRAPH
+DAG + Persistence
+83. PyDB V1 vs V2
+
+The fundamental difference is:
+
+V1
+"What is the database right now?"
+
+versus:
+
+V2
+"How did the database get here,
+what did it look like before,
+how did different histories evolve,
+and what happens when we combine them?"
+
+That is the conceptual jump you made.
+
+84. Complete V2 command reference
+
+Your current Time Machine CLI surface is:
+
+.history
+
+View version history.
+
+.branches
+
+View branch names and heads.
+
+.create_branch <name>
+
+Create a branch.
+
+.use <branch>
+
+Switch branches.
+
+.checkout <version>
+
+Restore a historical state.
+
+.diff <v1> <v2>
+
+Compare historical states.
+
+.replay <version>
+
+Re-execute a historical mutation.
+
+.compare <v1> <v2> <SELECT>
+
+Execute one SELECT against two historical states.
+
+.whatif <CREATE INDEX>; <SELECT>
+
+Analyze a hypothetical index.
+
+.merge <branch>
+
+Three-way merge a source branch into the active branch.
+
+85. The final architectural picture
+                         ┌───────────────┐
+                         │      SQL      │
+                         └───────┬───────┘
+                                 ↓
+                         ┌───────────────┐
+                         │     Lexer     │
+                         └───────┬───────┘
+                                 ↓
+                         ┌───────────────┐
+                         │    Parser     │
+                         └───────┬───────┘
+                                 ↓
+                         ┌───────────────┐
+                         │ Query Objects │
+                         └───────┬───────┘
+                                 ↓
+                         ┌───────────────┐
+                         │QueryExecutor  │
+                         └───────┬───────┘
+                                 ↓
+                         ┌───────────────┐
+                         │   Database    │
+                         └───┬───────┬───┘
+                             ↓       ↓
+                         ┌──────┐ ┌──────────┐
+                         │Table │ │ Storage  │
+                         └──┬───┘ └──────────┘
+                            │
+                    ┌───────┴────────┐
+                    ↓                ↓
+                 Hash Index       B+Tree
+                    │                │
+                    └───────┬────────┘
+                            ↓
+                         Planner
+
+
+                    ─────── V2 ───────
+
+                         Database
+                            │
+                            ↓
+                     HistoryManager
+                            │
+                            ↓
+                       Version DAG
+                     /      |       \
+                    /       |        \
+               Checkout   Branches   Diff
+                    \       |        /
+                     \      |       /
+                    Replay / Compare
+                         \   /
+                        What-if
+                           |
+                         Merge
+                           |
+                    two-parent commit
+86. The single most important lesson
+
+If someone asks you:
+
+"What did you actually learn by building PyDB?"
+
+A strong answer is:
+
+I learned how a database works internally rather than only how to consume a database API. I implemented a SQL processing pipeline from lexical analysis and parsing through query execution, constraints, indexing, persistence, transactions, and query planning. Then I extended that engine into a versioned database system where database states are immutable historical snapshots connected through a branch-aware DAG. I implemented checkout, diff, replay, historical query comparison, hypothetical index analysis, and three-way branch merging with conflict detection and atomic failure handling.
+
+That accurately describes what PyDB has taught you.
+
+And the deepest conceptual progression is:
+
+V1:
+database = current state
+
+V2:
+database = current state
+         + history
+         + branches
+         + alternative histories
+         + state comparison
+         + historical execution
+         + reconciliation
+
+That is the complete learning foundation of PyDB V1 + V2 Time Machine.
